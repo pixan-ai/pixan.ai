@@ -1,7 +1,7 @@
 {
   "name": "pixan-ai-v2",
-  "version": "2.2.0",
-  "description": "Pixan.ai GenAI Platform with latest LLM models (December 2025) - Added Gemini Flash Thinking",
+  "version": "2.3.0",
+  "description": "Pixan.ai GenAI Platform + WhatsApp Bot Admin Dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,6 +13,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@upstash/redis": "^1.34.3",
     "@vercel/kv": "^1.0.1",
     "bcryptjs": "^3.0.2",
     "canvas-confetti": "^1.9.3",
@@ -23,7 +24,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.5.2",
-    "react-icons": "^5.5.0"
+    "react-icons": "^5.5.0",
+    "twilio": "^5.3.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.1.5",
