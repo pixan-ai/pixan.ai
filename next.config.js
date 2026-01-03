@@ -7,16 +7,6 @@ const nextConfig = {
     unoptimized: true
   },
 
-  // Rewrites - Redirigir /WA al proyecto pixan-wa
-  async rewrites() {
-    return [
-      {
-        source: '/WA/:path*',
-        destination: 'https://pixan-wa-zc6l.vercel.app/WA/:path*',
-      },
-    ]
-  },
-
   // Security Headers
   async headers() {
     return [
