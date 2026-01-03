@@ -12,24 +12,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    // AI Gateway - fetch real balance
-    let aiGateway = { status: 'error', balance: 0, currency: 'USD' };
+    // AI Gateway - no tiene endpoint público de balance
+    // Mostrar como "manual" y usuario puede actualizar manualmente
+    let aiGateway = { status: 'manual', balance: 13.68, currency: 'USD', note: 'Update manually from dashboard' };
     try {
-      const aiGatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/billing/balance', {
-        headers: {
-          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`
-        }
-      });
-      if (aiGatewayResponse.ok) {
-        const data = await aiGatewayResponse.json();
-        aiGateway = {
-          status: data.balance > 5 ? 'ok' : 'warning',
-          balance: data.balance || 0,
-          currency: 'USD'
-        };
+      // Intentar leer balance guardado en Redis (actualizado manualmente)
+      const savedBalance = await redis.get('aigateway:balance');
+      if (savedBalance) {
+        aiGateway.balance = parseFloat(savedBalance);
+        aiGateway.status = aiGateway.balance > 5 ? 'ok' : 'warning';
       }
     } catch (err) {
-      console.error('Error fetching AI Gateway balance:', err);
+      console.error('Error reading AI Gateway balance from Redis:', err);
     }
 
     // Twilio
