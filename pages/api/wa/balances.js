@@ -12,12 +12,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    // AI Gateway (mock por ahora)
-    const aiGateway = {
-      status: 'ok',
-      balance: 15.50,
-      currency: 'USD'
-    };
+    // AI Gateway - fetch real balance
+    let aiGateway = { status: 'error', balance: 0, currency: 'USD' };
+    try {
+      const aiGatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/billing/balance', {
+        headers: {
+          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`
+        }
+      });
+      if (aiGatewayResponse.ok) {
+        const data = await aiGatewayResponse.json();
+        aiGateway = {
+          status: data.balance > 5 ? 'ok' : 'warning',
+          balance: data.balance || 0,
+          currency: 'USD'
+        };
+      }
+    } catch (err) {
+      console.error('Error fetching AI Gateway balance:', err);
+    }
 
     // Twilio
     let twilioBalance = { status: 'error', balance: 0, currency: 'USD' };
@@ -36,11 +49,12 @@ export default async function handler(req, res) {
       console.error('Error fetching Twilio balance:', err);
     }
 
-    // Gemini (mock por ahora)
+    // Gemini - free tier doesn't have balance API, just quota
     const gemini = {
       status: 'ok',
       quotaUsed: 342,
-      quotaLimit: 1500
+      quotaLimit: 1500,
+      note: 'Free tier - 1,500 requests/day'
     };
 
     // Upstash
