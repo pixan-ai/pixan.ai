@@ -94,60 +94,96 @@ async function saveLog(userId, userMessage, responseText, currentModel, status =
 }
 
 async function saveRecentMessages(userId, messages) {
-  const limited = messages.slice(-RECENT_MESSAGES_LIMIT);
-  await upstashCommand([
-    ['SET', `recent:${userId}`, JSON.stringify(limited)],
-    ['EXPIRE', `recent:${userId}`, MEMORY_EXPIRATION]
-  ]);
+  try {
+    const limited = messages.slice(-RECENT_MESSAGES_LIMIT);
+    await upstashCommand([
+      ['SET', `recent:${userId}`, JSON.stringify(limited)],
+      ['EXPIRE', `recent:${userId}`, MEMORY_EXPIRATION]
+    ]);
+  } catch (error) {
+    console.error('Error saving recent messages:', error);
+  }
 }
 
 async function getRecentMessages(userId) {
-  const result = await upstashCommand([['GET', `recent:${userId}`]]);
-  if (!result?.[0]?.result) return [];
-  const parsed = JSON.parse(result[0].result);
-  return Array.isArray(parsed) ? parsed : [];
+  try {
+    const result = await upstashCommand([['GET', `recent:${userId}`]]);
+    if (!result?.[0]?.result) return [];
+    const parsed = JSON.parse(result[0].result);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Error getting recent messages:', error);
+    return [];
+  }
 }
 
 async function saveLongTermMemory(userId, summary) {
-  await upstashCommand([
-    ['SET', `summary:${userId}`, summary],
-    ['EXPIRE', `summary:${userId}`, MEMORY_EXPIRATION]
-  ]);
+  try {
+    await upstashCommand([
+      ['SET', `summary:${userId}`, summary],
+      ['EXPIRE', `summary:${userId}`, MEMORY_EXPIRATION]
+    ]);
+  } catch (error) {
+    console.error('Error saving long term memory:', error);
+  }
 }
 
 async function getLongTermMemory(userId) {
-  const result = await upstashCommand([['GET', `summary:${userId}`]]);
-  return result?.[0]?.result || null;
+  try {
+    const result = await upstashCommand([['GET', `summary:${userId}`]]);
+    return result?.[0]?.result || null;
+  } catch (error) {
+    console.error('Error getting long term memory:', error);
+    return null;
+  }
 }
 
 async function getAndIncrementCount(userId) {
-  const result = await upstashCommand([
-    ['GET', `count:${userId}`],
-    ['INCR', `count:${userId}`],
-    ['EXPIRE', `count:${userId}`, MEMORY_EXPIRATION]
-  ]);
-  return result[0]?.result ? parseInt(result[0].result) : 0;
+  try {
+    const result = await upstashCommand([
+      ['GET', `count:${userId}`],
+      ['INCR', `count:${userId}`],
+      ['EXPIRE', `count:${userId}`, MEMORY_EXPIRATION]
+    ]);
+    return result?.[0]?.result ? parseInt(result[0].result) : 0;
+  } catch (error) {
+    console.error('Error with counter:', error);
+    return 0;
+  }
 }
 
 async function getUserModel(userId) {
-  const result = await upstashCommand([['GET', `model:${userId}`]]);
-  return result?.[0]?.result || DEFAULT_MODEL;
+  try {
+    const result = await upstashCommand([['GET', `model:${userId}`]]);
+    return result?.[0]?.result || DEFAULT_MODEL;
+  } catch (error) {
+    console.error('Error getting user model:', error);
+    return DEFAULT_MODEL;
+  }
 }
 
 async function setUserModel(userId, model) {
-  await upstashCommand([
-    ['SET', `model:${userId}`, model],
-    ['EXPIRE', `model:${userId}`, MEMORY_EXPIRATION]
-  ]);
+  try {
+    await upstashCommand([
+      ['SET', `model:${userId}`, model],
+      ['EXPIRE', `model:${userId}`, MEMORY_EXPIRATION]
+    ]);
+  } catch (error) {
+    console.error('Error setting user model:', error);
+  }
 }
 
 async function resetAllMemory(userId) {
-  await upstashCommand([
-    ['DEL', `summary:${userId}`],
-    ['DEL', `recent:${userId}`],
-    ['DEL', `count:${userId}`],
-    ['DEL', `model:${userId}`]
-  ]);
+  try {
+    await upstashCommand([
+      ['DEL', `summary:${userId}`],
+      ['DEL', `recent:${userId}`],
+      ['DEL', `count:${userId}`],
+      ['DEL', `model:${userId}`]
+    ]);
+  } catch (error) {
+    console.error('Error resetting memory:', error);
+  }
 }
 
 async function downloadImageAsBase64(imageUrl, twilioAccountSid, twilioAuthToken) {
@@ -208,7 +244,10 @@ async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
       })
     }
   );
-  if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  }
   const data = await response.json();
   const candidate = data.candidates?.[0];
   if (!candidate?.content) throw new Error('Invalid Gemini response');
@@ -237,6 +276,7 @@ async function callAIGateway(messages, modelString) {
 
 async function callAI(messages, modelKey) {
   const modelConfig = MODELS[modelKey] || MODELS[DEFAULT_MODEL];
+  console.log(`🤖 Using model: ${modelKey} (${modelConfig.provider})`);
   if (modelConfig.provider === 'google-direct') {
     return await callGeminiDirect(messages, modelConfig.model, modelConfig.apiVersion);
   }
@@ -244,13 +284,20 @@ async function callAI(messages, modelKey) {
 }
 
 async function generateSummary(recentMessages, oldSummary, modelKey) {
-  const summaryPrompt = oldSummary 
-    ? `Actualiza: ${oldSummary}\n\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`
-    : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`;
-  return await callAI([{ role: 'user', content: summaryPrompt }], modelKey);
+  try {
+    const summaryPrompt = oldSummary 
+      ? `Actualiza: ${oldSummary}\n\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`
+      : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`;
+    return await callAI([{ role: 'user', content: summaryPrompt }], modelKey);
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
+  console.log('📥 Webhook received:', req.method);
+  
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
@@ -258,6 +305,9 @@ export default async function handler(req, res) {
     const userId = From;
     const userMessage = Body ? Body.trim().toLowerCase() : '';
     const hasImage = NumMedia && parseInt(NumMedia) > 0;
+
+    console.log('📱 From:', userId);
+    console.log('💬 Message:', userMessage || '[empty]');
 
     if (userMessage.startsWith('/modelo ')) {
       const modelName = userMessage.replace('/modelo ', '').trim();
@@ -299,6 +349,9 @@ export default async function handler(req, res) {
     const recentMessages = await getRecentMessages(userId);
     const messageCount = await getAndIncrementCount(userId);
 
+    console.log(`🎯 Model: ${currentModel}`);
+    console.log(`📚 History: ${recentMessages.length} messages`);
+
     let userContent;
     if (hasImage) {
       if (!modelConfig.vision) {
@@ -331,30 +384,45 @@ export default async function handler(req, res) {
       ];
     }
 
+    console.log('🤖 Calling AI...');
     const responseText = await callAI(messagesToAI, currentModel);
+    console.log('✅ Response received:', responseText.substring(0, 50) + '...');
+
     recentMessages.push({ role: 'assistant', content: responseText });
     await saveRecentMessages(userId, recentMessages);
 
     const newCount = messageCount + 1;
     if (newCount >= SUMMARIZE_THRESHOLD && newCount % SUMMARIZE_THRESHOLD === 0) {
+      console.log('📝 Generating summary...');
       const newSummary = await generateSummary(recentMessages, longTermSummary, currentModel);
-      await saveLongTermMemory(userId, newSummary);
+      if (newSummary) {
+        await saveLongTermMemory(userId, newSummary);
+      }
     }
 
     await saveLog(userId, userContent, responseText, currentModel, 'success');
     await twilioClient.messages.create({ body: responseText, from: To, to: From });
+    
+    console.log('✅ Done!');
     return res.status(200).json({ success: true });
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('❌ Error:', error);
+    console.error('Stack:', error.stack);
+    
     try {
-      await saveLog(req.body.From, req.body.Body || '[error]', error.message, 'error', 'error');
-      await twilioClient.messages.create({
-        body: 'Error. Intenta /help',
-        from: req.body.To,
-        to: req.body.From
-      });
-    } catch (e) {}
-    return res.status(500).json({ error: error.message });
+      await saveLog(req.body?.From || 'unknown', req.body?.Body || '[error]', error.message, 'error', 'error');
+      if (req.body?.From && req.body?.To) {
+        await twilioClient.messages.create({
+          body: `Error: ${error.message}\n\nIntenta /help`,
+          from: req.body.To,
+          to: req.body.From
+        });
+      }
+    } catch (e) {
+      console.error('Error sending error message:', e);
+    }
+    
+    return res.status(500).json({ error: error.message, stack: error.stack });
   }
 }
