@@ -4,6 +4,7 @@ import { Activity, DollarSign, MessageSquare, Settings } from 'lucide-react';
 import BalanceStatus from '../components/WA/BalanceStatus';
 import LogsViewer from '../components/WA/LogsViewer';
 import SystemPromptEditor from '../components/WA/SystemPromptEditor';
+import VercelLogs from '../components/WA/VercelLogs';
 
 export default function WADashboard() {
   const [stats, setStats] = useState({
@@ -97,7 +98,7 @@ export default function WADashboard() {
           </div>
 
           {/* Main Grid - System Prompt y Logs */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             {/* System Prompt Editor */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <SystemPromptEditor />
@@ -107,6 +108,11 @@ export default function WADashboard() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <LogsViewer />
             </div>
+          </div>
+
+          {/* Vercel Technical Logs - Full Width */}
+          <div className="mb-8">
+            <VercelLogs />
           </div>
         </main>
       </div>
