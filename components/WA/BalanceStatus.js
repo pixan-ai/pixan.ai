@@ -90,7 +90,7 @@ export default function BalanceStatus({ balances, loading, error }) {
         {balances.upstash && (
           <BalanceItem
             label="Upstash"
-            value={`${(balances.upstash.commandsUsed || 0).toLocaleString()}/${(balances.upstash.dailyLimit || 10000).toLocaleString()}`}
+            value={balances.upstash.message || 'Connected'}
             status={balances.upstash.status}
             icon={Database}
           />
