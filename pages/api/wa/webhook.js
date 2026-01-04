@@ -150,11 +150,24 @@ export default async function handler(req, res) {
     } catch (error) {
       console.error('❌ AI Error:', error.message);
       await logTechnical(`❌ Error AI: ${error.message}`);
-      status = error.message.includes('429') ? 'rate_limit' : 'error';
       
-      response = status === 'rate_limit'
-        ? '⏳ *Demasiadas peticiones*\n\nIntenta en 1 minuto o usa `/modelo opus` para premium.'
-        : `❌ Error: ${error.message}\n\nIntenta /ayuda`;
+      // Determinar el tipo de error por el mensaje
+      if (error.message.includes('RATE_LIMIT')) {
+        status = 'rate_limit';
+        response = '⏳ *Demasiadas peticiones*\n\nIntenta en 1 minuto o usa `/modelo opus` para premium.';
+      } else if (error.message.includes('MODELO_NO_ENCONTRADO')) {
+        status = 'model_not_found';
+        response = '❌ *Error de modelo*\n\nEl modelo Gemini ha sido actualizado. Por favor envía `/reset` y vuelve a intentar.';
+      } else if (error.message.includes('SAFETY_FILTER')) {
+        status = 'safety_filter';
+        response = '⚠️ *Contenido bloqueado*\n\nTu mensaje fue bloqueado por filtros de seguridad. Intenta reformularlo.';
+      } else if (error.message.includes('REQUEST_INVALIDO')) {
+        status = 'invalid_request';
+        response = '❌ *Petición inválida*\n\nHubo un problema con el formato del mensaje. Intenta de nuevo.';
+      } else {
+        status = 'error';
+        response = `❌ *Error inesperado*\n\nIntenta /reset o /ayuda`;
+      }
     }
 
     // Send response
