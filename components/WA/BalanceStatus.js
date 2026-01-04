@@ -1,52 +1,55 @@
-import { useState, useEffect } from 'react';
-import { DollarSign, Loader2, CheckCircle, AlertCircle, Database } from 'lucide-react';
+/**
+ * Balance Status Component
+ * Shows all service balances in header
+ */
 
-export default function BalanceStatus() {
-  const [balances, setBalances] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+import { DollarSign, CheckCircle, AlertCircle, Database, Loader2 } from 'lucide-react';
 
-  useEffect(() => {
-    loadBalances();
-    const interval = setInterval(loadBalances, 60000); // Actualizar cada minuto
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadBalances = async () => {
-    try {
-      const res = await fetch('/api/wa/balances');
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setBalances(data);
-      setError(null);
-    } catch (err) {
-      console.error('Error loading balances:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+const StatusIcon = ({ status }) => {
+  const icons = {
+    ok: <CheckCircle className="w-4 h-4 text-green-500" />,
+    warning: <AlertCircle className="w-4 h-4 text-yellow-500" />,
+    error: <AlertCircle className="w-4 h-4 text-red-500" />
   };
+  return icons[status] || icons.error;
+};
 
-  const StatusIcon = ({ status }) => {
-    if (status === 'ok') return <CheckCircle className="w-4 h-4 text-green-500" />;
-    if (status === 'warning') return <AlertCircle className="w-4 h-4 text-yellow-500" />;
-    return <AlertCircle className="w-4 h-4 text-red-500" />;
-  };
+const BalanceItem = ({ label, value, status, icon: Icon }) => (
+  <div className="flex items-center gap-2 px-3 first:pl-0">
+    <StatusIcon status={status} />
+    <div className="text-center">
+      <p className="text-xs text-gray-500 flex items-center gap-1">
+        {Icon && <Icon className="w-3 h-3" />}
+        {label}
+      </p>
+      <p className="text-sm font-semibold text-gray-900">{value}</p>
+    </div>
+  </div>
+);
 
-  if (loading) {
-    return (
-      <div className="bg-gray-100 rounded-lg px-4 py-2 flex items-center space-x-2">
-        <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
-        <span className="text-sm text-gray-600">Cargando balances...</span>
-      </div>
-    );
-  }
+const Skeleton = () => (
+  <div className="bg-gray-100 rounded-lg px-4 py-3 animate-pulse">
+    <div className="flex items-center gap-4">
+      <div className="w-5 h-5 bg-gray-300 rounded" />
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="flex items-center gap-2 px-3">
+          <div className="w-4 h-4 bg-gray-300 rounded-full" />
+          <div>
+            <div className="w-12 h-3 bg-gray-300 rounded mb-1" />
+            <div className="w-16 h-4 bg-gray-300 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
+export default function BalanceStatus({ balances, loading, error }) {
+  if (loading) return <Skeleton />;
+  
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 flex items-center space-x-2">
+      <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 flex items-center gap-2">
         <AlertCircle className="w-4 h-4 text-red-500" />
         <span className="text-sm text-red-600">Error al cargar balances</span>
       </div>
@@ -57,72 +60,41 @@ export default function BalanceStatus() {
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-4 py-3">
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center gap-2 divide-x divide-gray-200">
         <DollarSign className="w-5 h-5 text-green-500" />
         
-        <div className="flex items-center space-x-4 divide-x divide-gray-200">
-          {/* AI Gateway */}
-          {balances.aiGateway && (
-            <div className="flex items-center space-x-2">
-              <StatusIcon status={balances.aiGateway.status || 'error'} />
-              <div>
-                <p className="text-xs text-gray-500">AI Gateway</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  ${typeof balances.aiGateway.balance === 'number' 
-                    ? balances.aiGateway.balance.toFixed(2) 
-                    : '0.00'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Twilio */}
-          {balances.twilio && (
-            <div className="flex items-center space-x-2 pl-4">
-              <StatusIcon status={balances.twilio.status || 'error'} />
-              <div>
-                <p className="text-xs text-gray-500">Twilio</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  ${typeof balances.twilio.balance === 'number' 
-                    ? balances.twilio.balance.toFixed(2) 
-                    : '0.00'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Gemini */}
-          {balances.gemini && (
-            <div className="flex items-center space-x-2 pl-4">
-              <StatusIcon status={balances.gemini.status || 'ok'} />
-              <div>
-                <p className="text-xs text-gray-500">Gemini</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {balances.gemini.quotaUsed || 0}/{balances.gemini.quotaLimit || 1500}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Upstash */}
-          {balances.upstash && (
-            <div className="flex items-center space-x-2 pl-4">
-              <StatusIcon status={balances.upstash.status || 'ok'} />
-              <div>
-                <p className="text-xs text-gray-500 flex items-center gap-1">
-                  <Database className="w-3 h-3" />
-                  Upstash
-                </p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {(balances.upstash.commandsUsed || 0).toLocaleString()}/{(balances.upstash.dailyLimit || 10000).toLocaleString()}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {balances.upstash.percentUsed || 0}% usado
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+        {balances.aiGateway && (
+          <BalanceItem
+            label="AI Gateway"
+            value={`$${(balances.aiGateway.balance || 0).toFixed(2)}`}
+            status={balances.aiGateway.status}
+          />
+        )}
+        
+        {balances.twilio && (
+          <BalanceItem
+            label="Twilio"
+            value={`$${(balances.twilio.balance || 0).toFixed(2)}`}
+            status={balances.twilio.status}
+          />
+        )}
+        
+        {balances.gemini && (
+          <BalanceItem
+            label="Gemini"
+            value={`${balances.gemini.quotaUsed || 0}/${balances.gemini.quotaLimit || 1500}`}
+            status={balances.gemini.status}
+          />
+        )}
+        
+        {balances.upstash && (
+          <BalanceItem
+            label="Upstash"
+            value={`${(balances.upstash.commandsUsed || 0).toLocaleString()}/${(balances.upstash.dailyLimit || 10000).toLocaleString()}`}
+            status={balances.upstash.status}
+            icon={Database}
+          />
+        )}
       </div>
     </div>
   );

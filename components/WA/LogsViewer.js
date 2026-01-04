@@ -1,79 +1,97 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+/**
+ * Logs Viewer Component
+ * Real-time conversation logs with expandable cards
+ */
+
+import { useState } from 'react';
 import { MessageSquare, RefreshCw, Download, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
-export default function LogsViewer() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [expandedLogs, setExpandedLogs] = useState({});
-  const logsContainerRef = useRef(null);
+const LogCard = ({ log, isExpanded, onToggle }) => {
+  if (!log?.id) return null;
+  
+  const time = new Date(log.timestamp).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  
+  return (
+    <div className={`bg-white rounded-lg border-l-4 ${log.status === 'error' ? 'border-red-500' : 'border-green-500'}`}>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 text-left"
+      >
+        <div className="flex items-center gap-2">
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-gray-400" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+          )}
+          
+          <span className="text-xs text-gray-500">{time}</span>
+          <span className="text-xs text-gray-400">•</span>
+          <span className="text-xs font-mono text-gray-600">{log.from?.slice(-4) || 'N/A'}</span>
+          <span className="text-xs text-gray-400">•</span>
+          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+            {log.model || 'N/A'}
+          </span>
+        </div>
+        
+        <span className="text-xs text-gray-400">
+          {isExpanded ? 'Ocultar' : 'Ver'}
+        </span>
+      </button>
+      
+      {isExpanded && (
+        <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
+          <div className="pt-3">
+            <p className="text-xs font-medium text-gray-500 mb-1">Usuario:</p>
+            <p className="text-sm bg-blue-50 p-2 rounded">{log.message || 'N/A'}</p>
+          </div>
+          
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-1">Bot:</p>
+            <p className="text-sm bg-green-50 p-2 rounded max-h-32 overflow-y-auto">
+              {log.response || 'N/A'}
+            </p>
+          </div>
+          
+          <div className="flex justify-between text-xs text-gray-400 pt-1">
+            <span>ID: {log.id}</span>
+            <span className={log.status === 'success' ? 'text-green-600' : 'text-red-600'}>
+              {log.status}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/wa/logs?limit=50');
-      const data = await res.json();
-      setLogs(data.logs || []);
-    } catch (err) {
-      console.error('Error loading logs:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+const EmptyState = () => (
+  <div className="text-center py-12 text-gray-500">
+    <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+    <p>No hay conversaciones todavía</p>
+  </div>
+);
 
-  useEffect(() => {
-    loadLogs();
-  }, [loadLogs]);
-
-  useEffect(() => {
-    if (autoRefresh) {
-      const interval = setInterval(loadLogs, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, loadLogs]);
-
-  const clearLogs = async () => {
-    if (!confirm('¿Seguro que quieres borrar todas las conversaciones?')) return;
-    
-    try {
-      await fetch('/api/wa/logs', { method: 'DELETE' });
-      setLogs([]);
-      setExpandedLogs({});
-    } catch (err) {
-      console.error('Error clearing logs:', err);
-    }
-  };
-
-  const downloadLogs = () => {
-    const dataStr = JSON.stringify(logs, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pixan-wa-conversations-${new Date().toISOString()}.json`;
-    link.click();
-  };
-
-  const toggleLog = (logId) => {
-    setExpandedLogs(prev => ({
-      ...prev,
-      [logId]: !prev[logId]
-    }));
-  };
-
+export default function LogsViewer({ logs, loading, autoRefresh, onRefresh, onClear, onToggleAutoRefresh }) {
+  const [expanded, setExpanded] = useState({});
+  
+  const toggleLog = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
+  
   const toggleAll = () => {
-    const allExpanded = Object.keys(expandedLogs).length === logs.length && 
-                       Object.values(expandedLogs).every(v => v);
-    
-    if (allExpanded) {
-      setExpandedLogs({});
-    } else {
-      const newExpanded = {};
-      logs.forEach(log => {
-        newExpanded[log.id] = true;
-      });
-      setExpandedLogs(newExpanded);
-    }
+    const allExpanded = logs.length > 0 && logs.every(l => expanded[l.id]);
+    setExpanded(allExpanded ? {} : Object.fromEntries(logs.map(l => [l.id, true])));
+  };
+  
+  const downloadLogs = () => {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pixan-wa-logs-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
   };
 
   return (
@@ -81,144 +99,61 @@ export default function LogsViewer() {
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-gray-700" />
-            <h2 className="text-lg font-semibold text-gray-900">Conversaciones en Tiempo Real</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Conversaciones</h2>
             <span className="text-xs text-gray-500">({logs.length})</span>
           </div>
           
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-1">
             <button
               onClick={toggleAll}
-              className="px-3 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
             >
-              {Object.values(expandedLogs).some(v => v) ? 'Colapsar todas' : 'Expandir todas'}
+              {Object.keys(expanded).length > 0 ? 'Colapsar' : 'Expandir'}
             </button>
             
             <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`px-3 py-1 text-sm rounded-md ${
-                autoRefresh 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-gray-100 text-gray-700'
-              }`}
+              onClick={onToggleAutoRefresh}
+              className={`px-2 py-1 text-xs rounded ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
             >
-              {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+              Auto {autoRefresh ? 'ON' : 'OFF'}
             </button>
             
-            <button
-              onClick={loadLogs}
-              disabled={loading}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <button onClick={onRefresh} disabled={loading} className="p-1.5 hover:bg-gray-100 rounded">
+              <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
             </button>
             
-            <button
-              onClick={downloadLogs}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-            >
-              <Download className="w-4 h-4" />
+            <button onClick={downloadLogs} className="p-1.5 hover:bg-gray-100 rounded">
+              <Download className="w-4 h-4 text-gray-600" />
             </button>
             
-            <button
-              onClick={clearLogs}
-              className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md"
-            >
-              <Trash2 className="w-4 h-4" />
+            <button onClick={() => confirm('¿Borrar todas las conversaciones?') && onClear()} className="p-1.5 hover:bg-red-50 rounded">
+              <Trash2 className="w-4 h-4 text-red-500" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Logs Content - Con scroll y altura fija */}
-      <div 
-        ref={logsContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50"
-        style={{ maxHeight: '500px' }}
-      >
+      {/* Logs */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style={{ maxHeight: '450px' }}>
         {logs.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No hay conversaciones todavía</p>
-          </div>
+          <EmptyState />
         ) : (
-          logs.map((log) => {
-            if (!log || !log.id) return null;
-            
-            const isExpanded = expandedLogs[log.id];
-            
-            return (
-              <div
-                key={log.id}
-                className={`bg-white rounded-lg border-l-4 ${
-                  log.status === 'error' ? 'border-red-500' : 'border-green-500'
-                } transition-all duration-200`}
-              >
-                {/* Header Colapsable */}
-                <div 
-                  onClick={() => toggleLog(log.id)}
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
-                >
-                  <div className="flex items-center space-x-2 flex-1">
-                    {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
-                    )}
-                    
-                    <div className="flex items-center space-x-2 text-xs text-gray-500">
-                      <span>{new Date(log.timestamp).toLocaleString('es-MX', { 
-                        hour: '2-digit', 
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })}</span>
-                      <span>•</span>
-                      <span className="font-mono text-gray-600">{log.from ? log.from.slice(-4) : 'N/A'}</span>
-                      <span>•</span>
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                        {log.model || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="text-xs text-gray-400">
-                    {isExpanded ? 'Ocultar' : 'Ver detalles'}
-                  </div>
-                </div>
-                
-                {/* Contenido Expandible */}
-                {isExpanded && (
-                  <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
-                    <div className="pt-2">
-                      <p className="text-xs font-semibold text-gray-600 mb-1">Usuario:</p>
-                      <p className="text-sm text-gray-800 bg-blue-50 p-2 rounded">{log.message || 'N/A'}</p>
-                    </div>
-                    
-                    <div>
-                      <p className="text-xs font-semibold text-gray-600 mb-1">Respuesta del Bot:</p>
-                      <div className="text-sm text-gray-800 bg-green-50 p-2 rounded max-h-40 overflow-y-auto">
-                        {log.response || 'N/A'}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between pt-2 text-xs text-gray-500">
-                      <span>ID: {log.id}</span>
-                      <span className={log.status === 'success' ? 'text-green-600' : 'text-red-600'}>
-                        {log.status || 'unknown'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
+          logs.map(log => (
+            <LogCard
+              key={log.id}
+              log={log}
+              isExpanded={expanded[log.id]}
+              onToggle={() => toggleLog(log.id)}
+            />
+          ))
         )}
       </div>
       
-      {/* Footer con info */}
-      <div className="p-3 border-t border-gray-200 bg-white text-xs text-gray-500 flex justify-between items-center">
-        <span>💡 Click en cada conversación para ver detalles completos</span>
+      {/* Footer */}
+      <div className="p-3 border-t bg-white text-xs text-gray-500 flex justify-between">
+        <span>💡 Click para ver detalles</span>
         {autoRefresh && <span className="text-green-600">● Actualizando cada 5s</span>}
       </div>
     </div>
