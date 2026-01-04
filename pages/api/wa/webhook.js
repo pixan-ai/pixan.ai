@@ -15,7 +15,7 @@ const redis = new Redis({
 });
 
 const DEFAULT_MODEL = 'gemini';
-const SYSTEM_PROMPT = 'Eres un asistente útil, conciso y amigable de Pixan en español. Puedes ver y analizar imágenes cuando te las envíen. Responde de manera clara y directa. Si no sabes algo, admítelo.';
+const DEFAULT_SYSTEM_PROMPT = 'Eres un asistente útil, conciso y amigable de Pixan en español. Puedes ver y analizar imágenes cuando te las envíen. Responde de manera clara y directa. Si no sabes algo, admítelo.';
 const MAX_MEMORY_AGE_MONTHS = 12;
 const MEMORY_SUMMARY_THRESHOLD = 30;
 
@@ -45,6 +45,17 @@ const upstashCommand = async (...args) => {
     console.error('Error tracking Upstash command:', err);
   }
   return await redis[args[0]](...args.slice(1));
+};
+
+// ✅ CARGAR SYSTEM PROMPT DESDE REDIS
+const getSystemPrompt = async () => {
+  try {
+    const customPrompt = await redis.get('system:prompt');
+    return customPrompt || DEFAULT_SYSTEM_PROMPT;
+  } catch (error) {
+    console.error('Error getting system prompt:', error);
+    return DEFAULT_SYSTEM_PROMPT;
+  }
 };
 
 const getUserModel = async (userId) => {
@@ -116,6 +127,38 @@ const saveConversationLog = async (from, message, response, model, status = 'suc
   }
 };
 
+// ✅ FUNCIÓN PARA DESCARGAR IMAGEN CON AUTENTICACIÓN TWILIO
+async function downloadImageFromTwilio(imageUrl) {
+  console.log('🖼️ Downloading image with Twilio auth from:', imageUrl);
+  
+  try {
+    const response = await fetch(imageUrl, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('❌ Image download failed:', response.status, response.statusText);
+      throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    console.log(`✅ Image downloaded: ${contentType}, size: ${Math.round(base64.length/1024)}KB`);
+    
+    return {
+      base64,
+      mimeType: contentType
+    };
+  } catch (error) {
+    console.error('❌ Error downloading image:', error);
+    throw error;
+  }
+}
+
 const convertToGeminiFormat = (messages) => {
   return messages.map(msg => {
     if (msg.role === 'system') {
@@ -125,7 +168,7 @@ const convertToGeminiFormat = (messages) => {
       const parts = msg.content.map(item => {
         if (item.type === 'text') return { text: item.text };
         if (item.type === 'image_url') {
-          const base64Match = item.image_url.url.match(/^data:image\/(\w+);base64,(.+)$/);
+          const base64Match = item.image_url.url.match(/^data:image\/([\w+]+);base64,(.+)$/);
           if (base64Match) {
             return { inline_data: { mime_type: `image/${base64Match[1]}`, data: base64Match[2] } };
           }
@@ -284,10 +327,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
+    // ✅ CARGAR SYSTEM PROMPT DESDE REDIS
+    const systemPrompt = await getSystemPrompt();
+    console.log('📋 System Prompt loaded from Redis:', systemPrompt.substring(0, 50) + '...');
+
     // Main conversation flow
     const selectedModel = await getUserModel(userId);
     const memory = await getMemory(userId);
-    const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+    const messages = [{ role: 'system', content: systemPrompt }];
 
     if (memory.length >= MEMORY_SUMMARY_THRESHOLD) {
       const summaryKey = `summary:${userId}`;
@@ -311,30 +358,30 @@ export default async function handler(req, res) {
     let userContent = userMessage;
     let logMessage = userMessage;
     
+    // ✅ PROCESAR IMAGEN CON AUTENTICACIÓN TWILIO
     if (hasImage && MediaUrl0) {
       const modelConfig = MODELS[selectedModel] || MODELS[DEFAULT_MODEL];
       if (modelConfig.vision) {
-        console.log('🖼️ Fetching image from:', MediaUrl0);
-        const imageResponse = await fetch(MediaUrl0);
-        
-        if (!imageResponse.ok) {
-          console.error('❌ Failed to fetch image:', imageResponse.status, imageResponse.statusText);
-          throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+        try {
+          // ✅ USAR FUNCIÓN CON AUTENTICACIÓN
+          const imageData = await downloadImageFromTwilio(MediaUrl0);
+          
+          userContent = [
+            { type: 'text', text: userMessage || '¿Qué ves en esta imagen?' },
+            { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.base64}` } }
+          ];
+          
+          logMessage = userMessage ? `${userMessage} [con imagen]` : '[imagen]';
+          console.log('✅ Image content array created successfully');
+        } catch (imageError) {
+          console.error('❌ Error processing image:', imageError);
+          await twilioClient.messages.create({
+            body: `❌ Error al procesar la imagen: ${imageError.message}\n\nIntenta enviarla de nuevo.`,
+            from: TWILIO_WHATSAPP_NUMBER,
+            to: userId
+          });
+          return res.status(200).json({ success: false, error: 'Image processing failed' });
         }
-        
-        const imageBuffer = await imageResponse.arrayBuffer();
-        const base64Image = Buffer.from(imageBuffer).toString('base64');
-        const mimeType = MediaContentType0 || imageResponse.headers.get('content-type') || 'image/jpeg';
-        
-        console.log(`📸 Image downloaded: ${mimeType}, size: ${base64Image.length} chars (${Math.round(base64Image.length/1024)}KB)`);
-        
-        userContent = [
-          { type: 'text', text: userMessage || '¿Qué ves en esta imagen?' },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } }
-        ];
-        
-        logMessage = userMessage ? `${userMessage} [con imagen]` : '[imagen]';
-        console.log('✅ Image content array created successfully');
       } else {
         await twilioClient.messages.create({
           body: `⚠️ El modelo *${selectedModel}* no soporta imágenes. Usa: /modelo gemini`,
