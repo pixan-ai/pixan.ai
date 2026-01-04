@@ -31,29 +31,42 @@ const getAIGatewayBalance = async () => {
 };
 
 const getGeminiUsage = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const usage = await db.get(`gemini:usage:${today}`) || 0;
-  const used = parseInt(usage);
-  
-  return {
-    status: used < LIMITS.geminiDaily * 0.8 ? 'ok' : 'warning',
-    quotaUsed: used,
-    quotaLimit: LIMITS.geminiDaily
-  };
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const usage = await db.get(`gemini:usage:${today}`) || 0;
+    const used = parseInt(usage);
+    
+    return {
+      status: used < LIMITS.geminiDaily * 0.8 ? 'ok' : 'warning',
+      quotaUsed: used,
+      quotaLimit: LIMITS.geminiDaily
+    };
+  } catch {
+    return {
+      status: 'error',
+      quotaUsed: 0,
+      quotaLimit: LIMITS.geminiDaily
+    };
+  }
 };
 
-const getUpstashUsage = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const commands = await db.get(`upstash:commands:${today}`) || 0;
-  const used = parseInt(commands);
-  const percent = Math.round((used / LIMITS.upstashDaily) * 100);
-  
-  return {
-    status: percent < 70 ? 'ok' : percent < 90 ? 'warning' : 'error',
-    commandsUsed: used,
-    dailyLimit: LIMITS.upstashDaily,
-    percentUsed: percent
-  };
+const getUpstashStatus = async () => {
+  try {
+    // Simple connection test - just check if Redis is accessible
+    await db.get('health:check');
+    
+    return {
+      status: 'ok',
+      message: 'Connected',
+      dailyLimit: LIMITS.upstashDaily
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      message: 'Connection failed',
+      dailyLimit: LIMITS.upstashDaily
+    };
+  }
 };
 
 export default async function handler(req, res) {
@@ -69,7 +82,7 @@ export default async function handler(req, res) {
         ...b
       })),
       getGeminiUsage(),
-      getUpstashUsage()
+      getUpstashStatus()
     ]);
 
     res.status(200).json({ aiGateway, twilio, gemini, upstash });
