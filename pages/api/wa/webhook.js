@@ -3,6 +3,7 @@
  * - Default: Gemini API directa (GRATIS hasta 1,500 msg/día)
  * - Opcional: AI Gateway para otros modelos
  * - Logs para dashboard pixan.ai/WA
+ * - Tracking de Upstash y Gemini para balances reales
  * Built for pixan.ai ecosystem
  */
 
@@ -56,6 +57,14 @@ async function upstashCommand(commands) {
       headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` },
       body: JSON.stringify(commands),
     });
+    
+    // Trackear comandos de Upstash para balance
+    const today = new Date().toISOString().split('T')[0];
+    await fetch(`${UPSTASH_URL}/incr/upstash:commands:${today}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }
+    });
+    
     return await response.json();
   } catch (error) {
     console.error('Upstash error:', error);
@@ -244,6 +253,14 @@ async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
       })
     }
   );
+  
+  // Trackear uso de Gemini para balance
+  const today = new Date().toISOString().split('T')[0];
+  await fetch(`${UPSTASH_URL}/incr/gemini:usage:${today}`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }
+  });
+  
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
@@ -286,8 +303,8 @@ async function callAI(messages, modelKey) {
 async function generateSummary(recentMessages, oldSummary, modelKey) {
   try {
     const summaryPrompt = oldSummary 
-      ? `Actualiza: ${oldSummary}\n\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`
-      : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`;
+      ? `Actualiza: ${oldSummary}\\n\\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\\n')}`
+      : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\\n')}`;
     return await callAI([{ role: 'user', content: summaryPrompt }], modelKey);
   } catch (error) {
     console.error('Error generating summary:', error);
@@ -315,12 +332,12 @@ export default async function handler(req, res) {
         await setUserModel(userId, modelName);
         const cfg = MODELS[modelName];
         await twilioClient.messages.create({
-          body: `✅ ${modelName}\n${cfg.provider === 'google-direct' ? '💰 GRATIS' : '💳 Pagado'}\n${cfg.vision ? '👁️' : '❌'} Vision`,
+          body: `✅ ${modelName}\\n${cfg.provider === 'google-direct' ? '💰 GRATIS' : '💳 Pagado'}\\n${cfg.vision ? '👁️' : '❌'} Vision`,
           from: To, to: From
         });
       } else {
         await twilioClient.messages.create({
-          body: `❌ Modelo inválido\nDisponibles: ${Object.keys(MODELS).join(', ')}`,
+          body: `❌ Modelo inválido\\nDisponibles: ${Object.keys(MODELS).join(', ')}`,
           from: To, to: From
         });
       }
@@ -335,8 +352,8 @@ export default async function handler(req, res) {
 
     if (userMessage === '/help' || userMessage === '/modelos') {
       const helpText = userMessage === '/help'
-        ? `🤖 Bot Multi-Modelo\n\n/modelo [nombre]\n/modelos\n/reset\n/help`
-        : `🧠 Modelos:\n💰 gemini, gemini-pro, gemini2\n💳 opus, sonnet, gpt5, gemini25, sonar, deepseek, grok, kimi`;
+        ? `🤖 Bot Multi-Modelo\\n\\n/modelo [nombre]\\n/modelos\\n/reset\\n/help`
+        : `🧠 Modelos:\\n💰 gemini, gemini-pro, gemini2\\n💳 opus, sonnet, gpt5, gemini25, sonar, deepseek, grok, kimi`;
       await twilioClient.messages.create({ body: helpText, from: To, to: From });
       return res.status(200).json({ success: true });
     }
@@ -378,7 +395,7 @@ export default async function handler(req, res) {
     let messagesToAI = [...recentMessages];
     if (longTermSummary) {
       messagesToAI = [
-        { role: 'user', content: `[CONTEXTO]\n${longTermSummary}` },
+        { role: 'user', content: `[CONTEXTO]\\n${longTermSummary}` },
         { role: 'assistant', content: 'Ok' },
         ...recentMessages
       ];
@@ -414,7 +431,7 @@ export default async function handler(req, res) {
       await saveLog(req.body?.From || 'unknown', req.body?.Body || '[error]', error.message, 'error', 'error');
       if (req.body?.From && req.body?.To) {
         await twilioClient.messages.create({
-          body: `Error: ${error.message}\n\nIntenta /help`,
+          body: `Error: ${error.message}\\n\\nIntenta /help`,
           from: req.body.To,
           to: req.body.From
         });
