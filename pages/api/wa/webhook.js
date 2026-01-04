@@ -74,14 +74,21 @@ const processImage = async (msg, modelId) => {
 
 // Main handler
 export default async function handler(req, res) {
+  console.log('📥 Webhook received:', req.method);
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const msg = parseMessage(req.body);
   
+  console.log('📱 From:', msg.userId);
+  console.log('💬 Message:', msg.text || '[empty]');
+  console.log('🖼️ Has media:', msg.hasMedia);
+  
   // Skip empty messages
   if (!msg.text && !msg.hasMedia) {
+    console.log('⚠️ Empty message, skipping');
     return res.status(200).json({ ok: true });
   }
 
@@ -95,6 +102,7 @@ export default async function handler(req, res) {
       const cmdName = cmd === 'model' ? 'modelo' : cmd;
       
       if (commands[cmdName]) {
+        console.log('📝 Command:', cmdName);
         const response = await commands[cmdName](msg.userId, args);
         await sendMessage(msg.userId, response);
         return res.status(200).json({ ok: true, command: cmdName });
@@ -103,12 +111,14 @@ export default async function handler(req, res) {
 
     // Get user's model
     const modelId = await getUserModel(msg.userId);
+    console.log('🤖 Model:', modelId);
     
     // Process image if present
     let userContent = msg.text;
     let logMessage = msg.text;
     
     if (msg.hasMedia) {
+      console.log('🖼️ Processing image...');
       const imageResult = await processImage(msg, modelId);
       
       if (imageResult?.error) {
@@ -123,6 +133,7 @@ export default async function handler(req, res) {
     }
 
     // Build conversation messages
+    console.log('📦 Building messages...');
     const messages = await buildMessages(msg.userId, userContent, modelId);
     
     // Call AI
@@ -130,9 +141,11 @@ export default async function handler(req, res) {
     let status = 'success';
     
     try {
+      console.log('🧠 Calling AI...');
       response = await chat(messages, modelId);
+      console.log('✅ AI response received');
     } catch (error) {
-      console.error('AI Error:', error.message);
+      console.error('❌ AI Error:', error.message);
       status = error.message.includes('429') ? 'rate_limit' : 'error';
       
       response = status === 'rate_limit'
@@ -141,14 +154,17 @@ export default async function handler(req, res) {
     }
 
     // Send response
+    console.log('📤 Sending response...');
     await sendMessage(msg.userId, response);
     
     // Save to memory (only on success)
     if (status === 'success') {
+      console.log('💾 Saving to memory...');
       await addToMemory(msg.userId, logMessage, response);
     }
     
     // Log conversation
+    console.log('📊 Saving log...');
     await saveLog({
       userId: msg.userId,
       message: logMessage,
@@ -157,14 +173,24 @@ export default async function handler(req, res) {
       status
     });
 
+    console.log('✅ Webhook complete');
     return res.status(200).json({ ok: true, model: modelId, status });
 
   } catch (error) {
-    console.error('Webhook Error:', error);
+    console.error('❌ Webhook Error:', error);
     
     try {
       await sendMessage(msg.userId, '❌ Error interno. Intenta de nuevo.');
     } catch {}
+    
+    // Still try to log the error
+    await saveLog({
+      userId: msg.userId,
+      message: msg.text,
+      response: `Error: ${error.message}`,
+      model: 'error',
+      status: 'error'
+    }).catch(() => {});
     
     return res.status(500).json({ error: error.message });
   }

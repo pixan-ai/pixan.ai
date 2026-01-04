@@ -9,6 +9,7 @@ import { useWADashboard } from '../hooks/useWADashboard';
 import BalanceStatus from '../components/WA/BalanceStatus';
 import LogsViewer from '../components/WA/LogsViewer';
 import SystemPromptEditor from '../components/WA/SystemPromptEditor';
+import VercelLogs from '../components/WA/VercelLogs';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-200">
@@ -111,6 +112,9 @@ export default function WADashboard() {
               />
             </div>
           </div>
+
+          {/* Technical Logs - Full Width */}
+          <VercelLogs />
         </main>
 
         {/* Footer */}
