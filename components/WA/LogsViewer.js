@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquare, RefreshCw, Download, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
 export default function LogsViewer() {
@@ -8,16 +8,7 @@ export default function LogsViewer() {
   const [expandedLogs, setExpandedLogs] = useState({});
   const logsContainerRef = useRef(null);
 
-  useEffect(() => {
-    loadLogs();
-    
-    if (autoRefresh) {
-      const interval = setInterval(loadLogs, 5000); // Actualizar cada 5 segundos
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh]);
-
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/wa/logs?limit=50');
@@ -28,7 +19,18 @@ export default function LogsViewer() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  useEffect(() => {
+    if (autoRefresh) {
+      const interval = setInterval(loadLogs, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, loadLogs]);
 
   const clearLogs = async () => {
     if (!confirm('¿Seguro que quieres borrar todas las conversaciones?')) return;
@@ -107,7 +109,7 @@ export default function LogsViewer() {
             <button
               onClick={loadLogs}
               disabled={loading}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -142,6 +144,8 @@ export default function LogsViewer() {
           </div>
         ) : (
           logs.map((log) => {
+            if (!log || !log.id) return null;
+            
             const isExpanded = expandedLogs[log.id];
             
             return (
@@ -170,10 +174,10 @@ export default function LogsViewer() {
                         second: '2-digit'
                       })}</span>
                       <span>•</span>
-                      <span className="font-mono text-gray-600">{log.from.slice(-4)}</span>
+                      <span className="font-mono text-gray-600">{log.from ? log.from.slice(-4) : 'N/A'}</span>
                       <span>•</span>
                       <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                        {log.model}
+                        {log.model || 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -188,20 +192,20 @@ export default function LogsViewer() {
                   <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
                     <div className="pt-2">
                       <p className="text-xs font-semibold text-gray-600 mb-1">Usuario:</p>
-                      <p className="text-sm text-gray-800 bg-blue-50 p-2 rounded">{log.message}</p>
+                      <p className="text-sm text-gray-800 bg-blue-50 p-2 rounded">{log.message || 'N/A'}</p>
                     </div>
                     
                     <div>
                       <p className="text-xs font-semibold text-gray-600 mb-1">Respuesta del Bot:</p>
                       <div className="text-sm text-gray-800 bg-green-50 p-2 rounded max-h-40 overflow-y-auto">
-                        {log.response}
+                        {log.response || 'N/A'}
                       </div>
                     </div>
                     
                     <div className="flex items-center justify-between pt-2 text-xs text-gray-500">
                       <span>ID: {log.id}</span>
                       <span className={log.status === 'success' ? 'text-green-600' : 'text-red-600'}>
-                        {log.status}
+                        {log.status || 'unknown'}
                       </span>
                     </div>
                   </div>
