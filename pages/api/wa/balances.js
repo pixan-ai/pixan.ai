@@ -52,33 +52,55 @@ const getGeminiUsage = async () => {
 
 const getUpstashStats = async () => {
   try {
-    // Call our new Upstash stats endpoint
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000';
+    // Call Upstash Developer API directly
+    const email = process.env.UPSTASH_EMAIL;
+    const apiKey = process.env.UPSTASH_API_KEY;
+    const databaseId = process.env.UPSTASH_DATABASE_ID;
     
-    const response = await fetch(`${baseUrl}/api/wa/upstash-stats`);
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch Upstash stats');
+    if (!email || !apiKey || !databaseId) {
+      console.log('⚠️ Upstash credentials not configured, using fallback');
+      throw new Error('Missing Upstash credentials');
     }
     
-    const stats = await response.json();
+    const credentials = Buffer.from(`${email}:${apiKey}`).toString('base64');
     
-    // Determine status based on usage percentage
-    const percentUsed = stats.percent_daily_used || 0;
+    const response = await fetch(
+      `https://api.upstash.com/v2/redis/stats/${databaseId}`,
+      {
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      console.error('❌ Upstash API error:', response.status);
+      throw new Error(`Upstash API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Calculate stats
+    const dailyCommands = data.daily_net_commands || 0;
+    const dailyLimit = 10000;
+    const percentUsed = Math.round((dailyCommands / dailyLimit) * 100);
+    const storageMB = ((data.current_storage || 0) / (1024 * 1024)).toFixed(2);
+    
     const status = percentUsed < 70 ? 'ok' : percentUsed < 90 ? 'warning' : 'error';
+    
+    console.log('✅ Upstash stats fetched:', { dailyCommands, percentUsed });
     
     return {
       status,
-      commandsUsed: stats.daily_commands || 0,
-      dailyLimit: stats.daily_limit || 10000,
+      commandsUsed: dailyCommands,
+      dailyLimit,
       percentUsed,
-      storageMB: parseFloat(stats.current_storage_mb || 0),
-      storageLimitMB: stats.storage_limit_mb || 256
+      storageMB: parseFloat(storageMB),
+      storageLimitMB: 256
     };
   } catch (error) {
-    console.error('Upstash stats error:', error);
+    console.error('Upstash stats error:', error.message);
     
     // Fallback to simple connection check
     try {
