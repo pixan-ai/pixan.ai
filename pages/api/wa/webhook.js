@@ -7,7 +7,7 @@ import { MODELS, DEFAULT_MODEL, getHelpText, getModelInfo } from '../../../lib/w
 import { sendMessage, downloadMedia } from '../../../lib/wa/twilio.js';
 import { chat, supportsVision } from '../../../lib/wa/ai.js';
 import { getUserModel, setUserModel, clearMemory, addToMemory, buildMessages } from '../../../lib/wa/memory.js';
-import { saveLog } from '../../../lib/wa/logger.js';
+import { saveLog, logTechnical } from '../../../lib/wa/logger.js';
 
 // Parse incoming WhatsApp message
 const parseMessage = (body) => ({
@@ -62,7 +62,10 @@ const processImage = async (msg, modelId) => {
     };
   }
   
+  await logTechnical('🖼️ Descargando imagen de Twilio...');
   const media = await downloadMedia(msg.mediaUrl);
+  await logTechnical(`✅ Imagen descargada: ${media.mimeType}`);
+  
   return {
     content: [
       { type: 'text', text: msg.text || '¿Qué ves en esta imagen?' },
@@ -74,21 +77,20 @@ const processImage = async (msg, modelId) => {
 
 // Main handler
 export default async function handler(req, res) {
-  console.log('📥 Webhook received:', req.method);
+  const startTime = Date.now();
   
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const msg = parseMessage(req.body);
+  const userShort = msg.userId?.slice(-4) || 'N/A';
   
-  console.log('📱 From:', msg.userId);
-  console.log('💬 Message:', msg.text || '[empty]');
-  console.log('🖼️ Has media:', msg.hasMedia);
+  await logTechnical(`📥 Webhook: ${userShort} - "${msg.text?.substring(0, 30) || '[media]'}"`);
   
   // Skip empty messages
   if (!msg.text && !msg.hasMedia) {
-    console.log('⚠️ Empty message, skipping');
+    await logTechnical('⚠️ Mensaje vacío, ignorando');
     return res.status(200).json({ ok: true });
   }
 
@@ -97,32 +99,31 @@ export default async function handler(req, res) {
     if (msg.textLower.startsWith('/')) {
       const [cmd, ...argParts] = msg.textLower.slice(1).split(' ');
       const args = argParts.join(' ');
-      
-      // Handle /modelo and /model
       const cmdName = cmd === 'model' ? 'modelo' : cmd;
       
       if (commands[cmdName]) {
-        console.log('📝 Command:', cmdName);
+        await logTechnical(`📝 Comando: /${cmdName} ${args}`);
         const response = await commands[cmdName](msg.userId, args);
         await sendMessage(msg.userId, response);
+        await logTechnical(`✅ Comando ejecutado en ${Date.now() - startTime}ms`);
         return res.status(200).json({ ok: true, command: cmdName });
       }
     }
 
     // Get user's model
     const modelId = await getUserModel(msg.userId);
-    console.log('🤖 Model:', modelId);
+    await logTechnical(`🤖 Modelo: ${modelId}`);
     
     // Process image if present
     let userContent = msg.text;
     let logMessage = msg.text;
     
     if (msg.hasMedia) {
-      console.log('🖼️ Processing image...');
       const imageResult = await processImage(msg, modelId);
       
       if (imageResult?.error) {
         await sendMessage(msg.userId, imageResult.error);
+        await logTechnical('⚠️ Modelo no soporta visión');
         return res.status(200).json({ ok: true, error: 'vision_unsupported' });
       }
       
@@ -133,19 +134,22 @@ export default async function handler(req, res) {
     }
 
     // Build conversation messages
-    console.log('📦 Building messages...');
+    await logTechnical('📦 Construyendo contexto de conversación...');
     const messages = await buildMessages(msg.userId, userContent, modelId);
+    await logTechnical(`💬 ${messages.length} mensajes en contexto`);
     
     // Call AI
     let response;
     let status = 'success';
     
     try {
-      console.log('🧠 Calling AI...');
+      await logTechnical(`🧠 Llamando a ${modelId}...`);
+      const aiStart = Date.now();
       response = await chat(messages, modelId);
-      console.log('✅ AI response received');
+      await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
     } catch (error) {
       console.error('❌ AI Error:', error.message);
+      await logTechnical(`❌ Error AI: ${error.message}`);
       status = error.message.includes('429') ? 'rate_limit' : 'error';
       
       response = status === 'rate_limit'
@@ -154,17 +158,16 @@ export default async function handler(req, res) {
     }
 
     // Send response
-    console.log('📤 Sending response...');
+    await logTechnical('📤 Enviando respuesta a WhatsApp...');
     await sendMessage(msg.userId, response);
     
     // Save to memory (only on success)
     if (status === 'success') {
-      console.log('💾 Saving to memory...');
       await addToMemory(msg.userId, logMessage, response);
+      await logTechnical('💾 Guardado en memoria');
     }
     
     // Log conversation
-    console.log('📊 Saving log...');
     await saveLog({
       userId: msg.userId,
       message: logMessage,
@@ -173,11 +176,14 @@ export default async function handler(req, res) {
       status
     });
 
-    console.log('✅ Webhook complete');
-    return res.status(200).json({ ok: true, model: modelId, status });
+    const totalTime = Date.now() - startTime;
+    await logTechnical(`✅ Completado en ${totalTime}ms`);
+    
+    return res.status(200).json({ ok: true, model: modelId, status, time: totalTime });
 
   } catch (error) {
     console.error('❌ Webhook Error:', error);
+    await logTechnical(`❌ Error fatal: ${error.message}`);
     
     try {
       await sendMessage(msg.userId, '❌ Error interno. Intenta de nuevo.');
