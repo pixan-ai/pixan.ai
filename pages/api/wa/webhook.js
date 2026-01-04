@@ -15,7 +15,7 @@ const redis = new Redis({
 });
 
 const DEFAULT_MODEL = 'gemini';
-const SYSTEM_PROMPT = 'Eres un asistente útil, conciso y amigable en español. Responde de manera clara y directa. Si no sabes algo, admítelo.';
+const SYSTEM_PROMPT = 'Eres un asistente útil, conciso y amigable de Pixan en español. Puedes ver y analizar imágenes cuando te las envíen. Responde de manera clara y directa. Si no sabes algo, admítelo.';
 const MAX_MEMORY_AGE_MONTHS = 12;
 const MEMORY_SUMMARY_THRESHOLD = 30;
 
@@ -141,6 +141,8 @@ const convertToGeminiFormat = (messages) => {
 async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
   const geminiMessages = convertToGeminiFormat(messages);
   
+  console.log('🔍 Gemini messages:', JSON.stringify(geminiMessages, null, 2));
+  
   const response = await fetch(
     `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`,
     {
@@ -161,10 +163,12 @@ async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
 
   if (!response.ok) {
     const error = await response.text();
+    console.error('❌ Gemini API error:', error);
     throw new Error(`Gemini API error: ${response.status} - ${error}`);
   }
 
   const data = await response.json();
+  console.log('📦 Gemini response:', JSON.stringify(data, null, 2));
   
   // Track Gemini usage
   const today = new Date().toISOString().split('T')[0];
@@ -224,15 +228,17 @@ export default async function handler(req, res) {
   try {
     const { Body, From, To, NumMedia, MediaUrl0 } = req.body;
     const userId = From;
-    const userMessage = Body ? Body.trim().toLowerCase() : '';
+    const userMessage = Body ? Body.trim() : ''; // NO convertir a lowercase
+    const userMessageLower = userMessage.toLowerCase(); // Para comandos
     const hasImage = NumMedia && parseInt(NumMedia) > 0;
 
     console.log('📱 From:', userId);
     console.log('💬 Message:', userMessage || '[empty]');
+    console.log('🖼️ Has image:', hasImage);
 
-    // Commands
-    if (userMessage.startsWith('/modelo ') || userMessage.startsWith('/model ')) {
-      const modelName = userMessage.replace(/^\/mode[lo]\s+/, '').trim();
+    // Commands (usar versión lowercase)
+    if (userMessageLower.startsWith('/modelo ') || userMessageLower.startsWith('/model ')) {
+      const modelName = userMessageLower.replace(/^\/mode[lo]\s+/, '').trim();
       if (MODELS[modelName]) {
         await setUserModel(userId, modelName);
         const cfg = MODELS[modelName];
@@ -251,7 +257,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    if (userMessage === '/ayuda' || userMessage === '/help') {
+    if (userMessageLower === '/ayuda' || userMessageLower === '/help') {
       await twilioClient.messages.create({
         body: HELP_TEXT,
         from: TWILIO_WHATSAPP_NUMBER,
@@ -260,7 +266,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    if (userMessage === '/reset') {
+    if (userMessageLower === '/reset') {
       await clearMemory(userId);
       await twilioClient.messages.create({
         body: '🧹 Memoria borrada. Empezamos de nuevo.',
@@ -295,17 +301,25 @@ export default async function handler(req, res) {
     }
 
     let userContent = userMessage;
+    let logMessage = userMessage;
+    
     if (hasImage && MediaUrl0) {
       const modelConfig = MODELS[selectedModel] || MODELS[DEFAULT_MODEL];
       if (modelConfig.vision) {
+        console.log('🖼️ Fetching image from:', MediaUrl0);
         const imageResponse = await fetch(MediaUrl0);
         const imageBuffer = await imageResponse.arrayBuffer();
         const base64Image = Buffer.from(imageBuffer).toString('base64');
         const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+        
+        console.log(`📸 Image downloaded: ${mimeType}, size: ${base64Image.length} chars`);
+        
         userContent = [
           { type: 'text', text: userMessage || '¿Qué ves en esta imagen?' },
           { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } }
         ];
+        
+        logMessage = userMessage ? `${userMessage} [con imagen]` : '[imagen]';
       } else {
         await twilioClient.messages.create({
           body: `⚠️ El modelo *${selectedModel}* no soporta imágenes. Usa: /modelo gemini`,
@@ -347,10 +361,10 @@ export default async function handler(req, res) {
 
     // Solo guardar en memoria si NO hubo error
     if (finalStatus === 'success') {
-      await addToMemory(userId, typeof userContent === 'string' ? userContent : '[imagen]', aiResponse);
+      await addToMemory(userId, logMessage, aiResponse);
     }
     
-    await saveConversationLog(userId, typeof userContent === 'string' ? userContent : '[imagen + texto]', aiResponse, selectedModel, finalStatus);
+    await saveConversationLog(userId, logMessage, aiResponse, selectedModel, finalStatus);
 
     console.log('✅ Response sent');
     return res.status(200).json({ success: true });
