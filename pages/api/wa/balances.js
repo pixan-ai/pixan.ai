@@ -12,18 +12,19 @@ export default async function handler(req, res) {
   }
 
   try {
-    // AI Gateway - endpoint real
+    // AI Gateway - mismo endpoint que genAI
     let aiGateway = { status: 'error', balance: 0, currency: 'USD' };
     try {
       const response = await fetch('https://ai-gateway.vercel.sh/v1/credits', {
         headers: {
-          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`
+          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
+          'Content-Type': 'application/json'
         }
       });
       
       if (response.ok) {
         const data = await response.json();
-        const balance = data.balance || 0;
+        const balance = parseFloat(data.balance) || 0;
         aiGateway = {
           status: balance > 5 ? 'ok' : balance > 1 ? 'warning' : 'error',
           balance,
@@ -52,7 +53,6 @@ export default async function handler(req, res) {
     }
 
     // Gemini - free tier no tiene API de balance, solo quota estimada
-    // Podríamos trackear uso real desde Redis si lo implementamos
     let geminiQuotaUsed = 0;
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -73,11 +73,10 @@ export default async function handler(req, res) {
     // Upstash - Comandos reales desde Redis
     let upstash = { status: 'ok', commandsUsed: 0, dailyLimit: 10000, percentUsed: 0 };
     try {
-      // Contar comandos del día actual
       const today = new Date().toISOString().split('T')[0];
       const commandKey = `upstash:commands:${today}`;
       const commands = await redis.get(commandKey) || 0;
-      const dailyLimit = 10000; // Free tier de Upstash
+      const dailyLimit = 10000;
       const percentUsed = Math.round((commands / dailyLimit) * 100);
       
       upstash = {

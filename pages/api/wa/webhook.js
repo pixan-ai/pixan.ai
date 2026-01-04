@@ -1,241 +1,146 @@
-/**
- * WhatsApp Bot con estrategia híbrida + Dashboard Logging
- * - Default: Gemini API directa (GRATIS hasta 1,500 msg/día)
- * - Opcional: AI Gateway para otros modelos
- * - Logs para dashboard pixan.ai/WA
- * - Tracking de Upstash y Gemini para balances reales
- * Built for pixan.ai ecosystem
- */
-
 import twilio from 'twilio';
+import { Redis } from '@upstash/redis';
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
-// Upstash Redis REST API
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-// AI Gateway config (solo para modelos no-Gemini)
-const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY;
-const AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions';
-
-// Gemini API directa (default - GRATIS)
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL;
+const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY;
+const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-// Configuración de memoria
-const RECENT_MESSAGES_LIMIT = 20;
-const SUMMARIZE_THRESHOLD = 30;
-const MEMORY_EXPIRATION = 31536000; // 12 meses
-
-// Modelos disponibles
-const MODELS = {
-  'gemini': { provider: 'google-direct', model: 'gemini-3-flash-preview', apiVersion: 'v1beta', vision: true },
-  'gemini-pro': { provider: 'google-direct', model: 'gemini-3-pro-preview', apiVersion: 'v1beta', vision: true },
-  'gemini2': { provider: 'google-direct', model: 'gemini-2.0-flash', apiVersion: 'v1beta', vision: true },
-  'opus': { provider: 'ai-gateway', model: 'anthropic/claude-opus-4-20250514', vision: true },
-  'sonnet': { provider: 'ai-gateway', model: 'anthropic/claude-sonnet-4-20250514', vision: true },
-  'claude': { provider: 'ai-gateway', model: 'anthropic/claude-sonnet-4-20250514', vision: true },
-  'gpt': { provider: 'ai-gateway', model: 'openai/gpt-5.2', vision: true },
-  'gpt5': { provider: 'ai-gateway', model: 'openai/gpt-5.2', vision: true },
-  'gemini25': { provider: 'ai-gateway', model: 'google/gemini-2.5-flash', vision: true },
-  'gemini-thinking': { provider: 'ai-gateway', model: 'google/gemini-2.0-flash-thinking-exp', vision: false },
-  'sonar': { provider: 'ai-gateway', model: 'perplexity/sonar-pro', vision: false },
-  'deepseek': { provider: 'ai-gateway', model: 'deepseek/deepseek-v3.2', vision: false },
-  'grok': { provider: 'ai-gateway', model: 'x-ai/grok-4.1', vision: false },
-  'kimi': { provider: 'ai-gateway', model: 'moonshot/kimi-k2', vision: false },
-};
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
 const DEFAULT_MODEL = 'gemini';
+const SYSTEM_PROMPT = 'Eres un asistente útil, conciso y amigable en español. Responde de manera clara y directa. Si no sabes algo, admítelo.';
+const MAX_MEMORY_AGE_MONTHS = 12;
+const MEMORY_SUMMARY_THRESHOLD = 30;
 
-async function upstashCommand(commands) {
+const MODELS = {
+  'opus': { provider: 'ai-gateway', model: 'anthropic/claude-opus-4.5', vision: true },
+  'sonnet': { provider: 'ai-gateway', model: 'anthropic/claude-sonnet-4.5', vision: true },
+  'haiku': { provider: 'ai-gateway', model: 'anthropic/claude-haiku-4-1', vision: true },
+  'gpt': { provider: 'ai-gateway', model: 'openai/gpt-4.5-mini', vision: true },
+  'gemini': { provider: 'google-direct', model: 'gemini-3-flash-preview', vision: true, apiVersion: 'v1beta' },
+  'gemini-flash': { provider: 'google-direct', model: 'gemini-2.5-flash', vision: true, apiVersion: 'v1beta' },
+  'gemini-thinking': { provider: 'google-direct', model: 'gemini-2.0-flash-thinking-exp-1219', vision: false, apiVersion: 'v1beta' },
+  'grok': { provider: 'ai-gateway', model: 'xai/grok-4-1-fast-reasoning', vision: false },
+  'deepseek': { provider: 'ai-gateway', model: 'deepseek/deepseek-v3.2-exp-thinking', vision: false },
+  'mistral': { provider: 'ai-gateway', model: 'mistral/mistral-large-2', vision: false },
+  'llama': { provider: 'ai-gateway', model: 'meta-llama/llama-4-scout-preview', vision: false }
+};
+
+const HELP_TEXT = `📱 *Comandos WhatsApp Bot*\n\n*Modelos disponibles:*\n${Object.keys(MODELS).map(m => `• /${m}`).join('\n')}\n\n*Otros comandos:*\n• /ayuda - Ver esta ayuda\n• /reset - Borrar memoria\n\nModelo actual: *${DEFAULT_MODEL}*`;
+
+let commandCounter = 0;
+const upstashCommand = async (...args) => {
+  commandCounter++;
+  const today = new Date().toISOString().split('T')[0];
   try {
-    const response = await fetch(`${UPSTASH_URL}/pipeline`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` },
-      body: JSON.stringify(commands),
-    });
-    
-    // Trackear comandos de Upstash para balance
-    const today = new Date().toISOString().split('T')[0];
-    await fetch(`${UPSTASH_URL}/incr/upstash:commands:${today}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }
-    });
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Upstash error:', error);
-    return null;
+    await redis.incr(`upstash:commands:${today}`);
+  } catch (err) {
+    console.error('Error tracking Upstash command:', err);
   }
-}
+  return await redis[args[0]](...args.slice(1));
+};
 
-async function saveLog(userId, userMessage, responseText, currentModel, status = 'success') {
+const getUserModel = async (userId) => {
   try {
-    const logEntry = {
-      id: `${Date.now()}-${userId.slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      from: userId,
-      message: typeof userMessage === 'string' ? userMessage : '[imagen]',
-      model: currentModel,
-      response: responseText.substring(0, 500),
-      status
-    };
-    
-    await upstashCommand([
-      ['LPUSH', 'logs:messages', JSON.stringify(logEntry)],
-      ['LTRIM', 'logs:messages', 0, 99],
-      ['INCR', 'stats:total_messages'],
-      ['SADD', 'stats:active_users_set', userId],
-      ['EXPIRE', 'stats:active_users_set', 86400]
-    ]);
-    
-    const activeUsersResult = await upstashCommand([['SCARD', 'stats:active_users_set']]);
-    if (activeUsersResult?.[0]?.result) {
-      await upstashCommand([['SET', 'stats:active_users', activeUsersResult[0].result]]);
-    }
-    console.log('📊 Log saved');
-  } catch (error) {
-    console.error('Error saving log:', error);
-  }
-}
-
-async function saveRecentMessages(userId, messages) {
-  try {
-    const limited = messages.slice(-RECENT_MESSAGES_LIMIT);
-    await upstashCommand([
-      ['SET', `recent:${userId}`, JSON.stringify(limited)],
-      ['EXPIRE', `recent:${userId}`, MEMORY_EXPIRATION]
-    ]);
-  } catch (error) {
-    console.error('Error saving recent messages:', error);
-  }
-}
-
-async function getRecentMessages(userId) {
-  try {
-    const result = await upstashCommand([['GET', `recent:${userId}`]]);
-    if (!result?.[0]?.result) return [];
-    const parsed = JSON.parse(result[0].result);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error('Error getting recent messages:', error);
-    return [];
-  }
-}
-
-async function saveLongTermMemory(userId, summary) {
-  try {
-    await upstashCommand([
-      ['SET', `summary:${userId}`, summary],
-      ['EXPIRE', `summary:${userId}`, MEMORY_EXPIRATION]
-    ]);
-  } catch (error) {
-    console.error('Error saving long term memory:', error);
-  }
-}
-
-async function getLongTermMemory(userId) {
-  try {
-    const result = await upstashCommand([['GET', `summary:${userId}`]]);
-    return result?.[0]?.result || null;
-  } catch (error) {
-    console.error('Error getting long term memory:', error);
-    return null;
-  }
-}
-
-async function getAndIncrementCount(userId) {
-  try {
-    const result = await upstashCommand([
-      ['GET', `count:${userId}`],
-      ['INCR', `count:${userId}`],
-      ['EXPIRE', `count:${userId}`, MEMORY_EXPIRATION]
-    ]);
-    return result?.[0]?.result ? parseInt(result[0].result) : 0;
-  } catch (error) {
-    console.error('Error with counter:', error);
-    return 0;
-  }
-}
-
-async function getUserModel(userId) {
-  try {
-    const result = await upstashCommand([['GET', `model:${userId}`]]);
-    return result?.[0]?.result || DEFAULT_MODEL;
+    return await upstashCommand('get', `model:${userId}`) || DEFAULT_MODEL;
   } catch (error) {
     console.error('Error getting user model:', error);
     return DEFAULT_MODEL;
   }
-}
+};
 
-async function setUserModel(userId, model) {
+const setUserModel = async (userId, model) => {
   try {
-    await upstashCommand([
-      ['SET', `model:${userId}`, model],
-      ['EXPIRE', `model:${userId}`, MEMORY_EXPIRATION]
-    ]);
+    await upstashCommand('set', `model:${userId}`, model);
   } catch (error) {
     console.error('Error setting user model:', error);
   }
-}
+};
 
-async function resetAllMemory(userId) {
+const getMemory = async (userId) => {
   try {
-    await upstashCommand([
-      ['DEL', `summary:${userId}`],
-      ['DEL', `recent:${userId}`],
-      ['DEL', `count:${userId}`],
-      ['DEL', `model:${userId}`]
-    ]);
+    const memory = await upstashCommand('get', `memory:${userId}`);
+    if (!memory) return [];
+    const parsed = JSON.parse(memory);
+    const cutoffDate = new Date();
+    cutoffDate.setMonth(cutoffDate.getMonth() - MAX_MEMORY_AGE_MONTHS);
+    return parsed.filter(m => new Date(m.timestamp) >= cutoffDate);
   } catch (error) {
-    console.error('Error resetting memory:', error);
+    console.error('Error getting memory:', error);
+    return [];
   }
-}
+};
 
-async function downloadImageAsBase64(imageUrl, twilioAccountSid, twilioAuthToken) {
-  const response = await fetch(imageUrl, {
-    headers: {
-      'Authorization': 'Basic ' + Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64')
+const addToMemory = async (userId, userMsg, assistantMsg) => {
+  try {
+    const memory = await getMemory(userId);
+    memory.push({ timestamp: new Date().toISOString(), user: userMsg, assistant: assistantMsg });
+    if (memory.length > 100) memory.splice(0, memory.length - 100);
+    await upstashCommand('set', `memory:${userId}`, JSON.stringify(memory));
+  } catch (error) {
+    console.error('Error adding to memory:', error);
+  }
+};
+
+const clearMemory = async (userId) => {
+  try {
+    await upstashCommand('del', `memory:${userId}`);
+    await upstashCommand('del', `summary:${userId}`);
+  } catch (error) {
+    console.error('Error clearing memory:', error);
+  }
+};
+
+const saveConversationLog = async (from, message, response, model, status = 'success') => {
+  try {
+    const log = {
+      id: `${Date.now()}-${from}`,
+      timestamp: new Date().toISOString(),
+      from,
+      message,
+      response,
+      model,
+      status
+    };
+    await upstashCommand('lpush', 'logs:messages', JSON.stringify(log));
+    await upstashCommand('ltrim', 'logs:messages', 0, 99);
+  } catch (error) {
+    console.error('Error saving log:', error);
+  }
+};
+
+const convertToGeminiFormat = (messages) => {
+  return messages.map(msg => {
+    if (msg.role === 'system') {
+      return { role: 'user', parts: [{ text: `[SYSTEM] ${msg.content}` }] };
     }
-  });
-  if (!response.ok) throw new Error(`Failed to download image: ${response.status}`);
-  const arrayBuffer = await response.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString('base64');
-  const mimeType = response.headers.get('content-type') || 'image/jpeg';
-  return { base64, mimeType };
-}
-
-function convertToGeminiFormat(messages) {
-  const contents = [];
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      if (Array.isArray(msg.content)) {
-        const parts = [];
-        for (const item of msg.content) {
-          if (item.type === 'text') {
-            parts.push({ text: item.text });
-          } else if (item.type === 'image_url') {
-            const base64Data = item.image_url.url.split(',')[1];
-            const mimeType = item.image_url.url.match(/data:([^;]+);/)[1];
-            parts.push({ inlineData: { mimeType, data: base64Data } });
+    if (Array.isArray(msg.content)) {
+      const parts = msg.content.map(item => {
+        if (item.type === 'text') return { text: item.text };
+        if (item.type === 'image_url') {
+          const base64Match = item.image_url.url.match(/^data:image\/(\w+);base64,(.+)$/);
+          if (base64Match) {
+            return { inline_data: { mime_type: `image/${base64Match[1]}`, data: base64Match[2] } };
           }
         }
-        contents.push({ role: 'user', parts });
-      } else {
-        contents.push({ role: 'user', parts: [{ text: msg.content }] });
-      }
-    } else if (msg.role === 'assistant') {
-      contents.push({ role: 'model', parts: [{ text: msg.content }] });
+        return null;
+      }).filter(Boolean);
+      return { role: msg.role === 'assistant' ? 'model' : 'user', parts };
     }
-  }
-  return contents;
-}
+    return { role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] };
+  });
+};
 
 async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
   const geminiMessages = convertToGeminiFormat(messages);
+  
   const response = await fetch(
     `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`,
     {
@@ -253,21 +158,24 @@ async function callGeminiDirect(messages, modelName, apiVersion = 'v1beta') {
       })
     }
   );
-  
-  // Trackear uso de Gemini para balance
-  const today = new Date().toISOString().split('T')[0];
-  await fetch(`${UPSTASH_URL}/incr/gemini:usage:${today}`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }
-  });
-  
+
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    const error = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${error}`);
   }
+
   const data = await response.json();
-  const candidate = data.candidates?.[0];
-  if (!candidate?.content) throw new Error('Invalid Gemini response');
+  
+  // Track Gemini usage
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    await redis.incr(`gemini:usage:${today}`);
+  } catch (err) {
+    console.error('Error tracking Gemini usage:', err);
+  }
+  
+  if (!data.candidates?.[0]?.content) throw new Error('Invalid Gemini response');
+  const candidate = data.candidates[0];
   if (candidate.finishReason === 'SAFETY') throw new Error('Content blocked by safety filters');
   return candidate.content.parts[0].text;
 }
@@ -279,12 +187,7 @@ async function callAIGateway(messages, modelString) {
       'Authorization': `Bearer ${AI_GATEWAY_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: modelString,
-      messages,
-      max_tokens: 1024,
-      temperature: 0.7,
-    }),
+    body: JSON.stringify({ model: modelString, messages, max_tokens: 1024, temperature: 0.7 }),
   });
   if (!response.ok) throw new Error(`AI Gateway error: ${response.status}`);
   const data = await response.json();
@@ -294,6 +197,7 @@ async function callAIGateway(messages, modelString) {
 async function callAI(messages, modelKey) {
   const modelConfig = MODELS[modelKey] || MODELS[DEFAULT_MODEL];
   console.log(`🤖 Using model: ${modelKey} (${modelConfig.provider})`);
+  
   if (modelConfig.provider === 'google-direct') {
     return await callGeminiDirect(messages, modelConfig.model, modelConfig.apiVersion);
   }
@@ -303,8 +207,8 @@ async function callAI(messages, modelKey) {
 async function generateSummary(recentMessages, oldSummary, modelKey) {
   try {
     const summaryPrompt = oldSummary 
-      ? `Actualiza: ${oldSummary}\\n\\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\\n')}`
-      : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\\n')}`;
+      ? `Actualiza: ${oldSummary}\n\nNuevos: ${recentMessages.slice(-10).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`
+      : `Resumen: ${recentMessages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : '[imagen]'}`).join('\n')}`;
     return await callAI([{ role: 'user', content: summaryPrompt }], modelKey);
   } catch (error) {
     console.error('Error generating summary:', error);
@@ -326,120 +230,142 @@ export default async function handler(req, res) {
     console.log('📱 From:', userId);
     console.log('💬 Message:', userMessage || '[empty]');
 
-    if (userMessage.startsWith('/modelo ')) {
-      const modelName = userMessage.replace('/modelo ', '').trim();
+    // Commands
+    if (userMessage.startsWith('/modelo ') || userMessage.startsWith('/model ')) {
+      const modelName = userMessage.replace(/^\/mode[lo]\s+/, '').trim();
       if (MODELS[modelName]) {
         await setUserModel(userId, modelName);
         const cfg = MODELS[modelName];
         await twilioClient.messages.create({
-          body: `✅ ${modelName}\\n${cfg.provider === 'google-direct' ? '💰 GRATIS' : '💳 Pagado'}\\n${cfg.vision ? '👁️' : '❌'} Vision`,
-          from: To, to: From
+          body: `✅ Modelo cambiado a *${modelName}*\n${cfg.provider === 'google-direct' ? '💰 GRATIS' : '💳 Pagado'}\n${cfg.vision ? '📷 Con visión' : '📝 Solo texto'}`,
+          from: TWILIO_WHATSAPP_NUMBER,
+          to: userId
         });
       } else {
         await twilioClient.messages.create({
-          body: `❌ Modelo inválido\\nDisponibles: ${Object.keys(MODELS).join(', ')}`,
-          from: To, to: From
+          body: `❌ Modelo "${modelName}" no existe.\n\nDisponibles: ${Object.keys(MODELS).join(', ')}`,
+          from: TWILIO_WHATSAPP_NUMBER,
+          to: userId
         });
       }
+      return res.status(200).json({ success: true });
+    }
+
+    if (userMessage === '/ayuda' || userMessage === '/help') {
+      await twilioClient.messages.create({
+        body: HELP_TEXT,
+        from: TWILIO_WHATSAPP_NUMBER,
+        to: userId
+      });
       return res.status(200).json({ success: true });
     }
 
     if (userMessage === '/reset') {
-      await resetAllMemory(userId);
-      await twilioClient.messages.create({ body: '🔄 Memoria reiniciada', from: To, to: From });
+      await clearMemory(userId);
+      await twilioClient.messages.create({
+        body: '🧹 Memoria borrada. Empezamos de nuevo.',
+        from: TWILIO_WHATSAPP_NUMBER,
+        to: userId
+      });
       return res.status(200).json({ success: true });
     }
 
-    if (userMessage === '/help' || userMessage === '/modelos') {
-      const helpText = userMessage === '/help'
-        ? `🤖 Bot Multi-Modelo\\n\\n/modelo [nombre]\\n/modelos\\n/reset\\n/help`
-        : `🧠 Modelos:\\n💰 gemini, gemini-pro, gemini2\\n💳 opus, sonnet, gpt5, gemini25, sonar, deepseek, grok, kimi`;
-      await twilioClient.messages.create({ body: helpText, from: To, to: From });
-      return res.status(200).json({ success: true });
+    // Main conversation flow
+    const selectedModel = await getUserModel(userId);
+    const memory = await getMemory(userId);
+    const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+
+    if (memory.length >= MEMORY_SUMMARY_THRESHOLD) {
+      const summaryKey = `summary:${userId}`;
+      let summary = await upstashCommand('get', summaryKey);
+      if (!summary) {
+        summary = await generateSummary(memory.map(m => [{ role: 'user', content: m.user }, { role: 'assistant', content: m.assistant }]).flat(), null, selectedModel);
+        if (summary) await upstashCommand('set', summaryKey, summary);
+      }
+      if (summary) messages.push({ role: 'system', content: `Resumen de conversación previa: ${summary}` });
+      memory.slice(-10).forEach(m => {
+        messages.push({ role: 'user', content: m.user });
+        messages.push({ role: 'assistant', content: m.assistant });
+      });
+    } else {
+      memory.forEach(m => {
+        messages.push({ role: 'user', content: m.user });
+        messages.push({ role: 'assistant', content: m.assistant });
+      });
     }
 
-    if (!userMessage && !hasImage) return res.status(200).send('OK');
-
-    const currentModel = await getUserModel(userId);
-    const modelConfig = MODELS[currentModel];
-    const longTermSummary = await getLongTermMemory(userId);
-    const recentMessages = await getRecentMessages(userId);
-    const messageCount = await getAndIncrementCount(userId);
-
-    console.log(`🎯 Model: ${currentModel}`);
-    console.log(`📚 History: ${recentMessages.length} messages`);
-
-    let userContent;
-    if (hasImage) {
-      if (!modelConfig.vision) {
+    let userContent = userMessage;
+    if (hasImage && MediaUrl0) {
+      const modelConfig = MODELS[selectedModel] || MODELS[DEFAULT_MODEL];
+      if (modelConfig.vision) {
+        const imageResponse = await fetch(MediaUrl0);
+        const imageBuffer = await imageResponse.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+        const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+        userContent = [
+          { type: 'text', text: userMessage || '¿Qué ves en esta imagen?' },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } }
+        ];
+      } else {
         await twilioClient.messages.create({
-          body: `❌ ${currentModel} no soporta imágenes`,
-          from: To, to: From
+          body: `⚠️ El modelo *${selectedModel}* no soporta imágenes. Usa: /modelo gemini`,
+          from: TWILIO_WHATSAPP_NUMBER,
+          to: userId
         });
         return res.status(200).json({ success: true });
       }
-      const imageData = await downloadImageAsBase64(
-        MediaUrl0,
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
-      userContent = [
-        { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.base64}` } },
-        { type: 'text', text: userMessage || '¿Qué hay en esta imagen?' }
-      ];
-    } else {
-      userContent = userMessage;
     }
 
-    recentMessages.push({ role: 'user', content: userContent });
-    let messagesToAI = [...recentMessages];
-    if (longTermSummary) {
-      messagesToAI = [
-        { role: 'user', content: `[CONTEXTO]\\n${longTermSummary}` },
-        { role: 'assistant', content: 'Ok' },
-        ...recentMessages
-      ];
-    }
+    messages.push({ role: 'user', content: userContent });
 
-    console.log('🤖 Calling AI...');
-    const responseText = await callAI(messagesToAI, currentModel);
-    console.log('✅ Response received:', responseText.substring(0, 50) + '...');
+    let aiResponse;
+    let finalStatus = 'success';
+    let errorMessage = null;
 
-    recentMessages.push({ role: 'assistant', content: responseText });
-    await saveRecentMessages(userId, recentMessages);
-
-    const newCount = messageCount + 1;
-    if (newCount >= SUMMARIZE_THRESHOLD && newCount % SUMMARIZE_THRESHOLD === 0) {
-      console.log('📝 Generating summary...');
-      const newSummary = await generateSummary(recentMessages, longTermSummary, currentModel);
-      if (newSummary) {
-        await saveLongTermMemory(userId, newSummary);
-      }
-    }
-
-    await saveLog(userId, userContent, responseText, currentModel, 'success');
-    await twilioClient.messages.create({ body: responseText, from: To, to: From });
-    
-    console.log('✅ Done!');
-    return res.status(200).json({ success: true });
-    
-  } catch (error) {
-    console.error('❌ Error:', error);
-    console.error('Stack:', error.stack);
-    
     try {
-      await saveLog(req.body?.From || 'unknown', req.body?.Body || '[error]', error.message, 'error', 'error');
-      if (req.body?.From && req.body?.To) {
-        await twilioClient.messages.create({
-          body: `Error: ${error.message}\\n\\nIntenta /help`,
-          from: req.body.To,
-          to: req.body.From
-        });
+      aiResponse = await callAI(messages, selectedModel);
+    } catch (error) {
+      console.error('❌ AI Error:', error.message);
+      
+      // Detectar error 429 de rate limit en Gemini
+      if (error.message.includes('429')) {
+        errorMessage = '⏳ *Estoy muy ocupado ahora mismo*\n\nDemasiadas peticiones. Por favor intenta de nuevo en 1 minuto.\n\n💡 Tip: Usa `/modelo opus` o `/modelo sonnet` para modelos premium sin límites.';
+        finalStatus = 'rate_limit';
+      } else {
+        errorMessage = `❌ Error del modelo ${selectedModel}: ${error.message}\n\n💡 Intenta con otro modelo: /ayuda`;
+        finalStatus = 'error';
       }
-    } catch (e) {
-      console.error('Error sending error message:', e);
+      
+      aiResponse = errorMessage;
+    }
+
+    await twilioClient.messages.create({
+      body: aiResponse,
+      from: TWILIO_WHATSAPP_NUMBER,
+      to: userId
+    });
+
+    // Solo guardar en memoria si NO hubo error
+    if (finalStatus === 'success') {
+      await addToMemory(userId, typeof userContent === 'string' ? userContent : '[imagen]', aiResponse);
     }
     
-    return res.status(500).json({ error: error.message, stack: error.stack });
+    await saveConversationLog(userId, typeof userContent === 'string' ? userContent : '[imagen + texto]', aiResponse, selectedModel, finalStatus);
+
+    console.log('✅ Response sent');
+    return res.status(200).json({ success: true });
+
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    try {
+      await twilioClient.messages.create({
+        body: '❌ Error interno del servidor. Por favor intenta de nuevo.',
+        from: TWILIO_WHATSAPP_NUMBER,
+        to: req.body.From
+      });
+    } catch (twilioError) {
+      console.error('❌ Error sending error message:', twilioError);
+    }
+    return res.status(500).json({ error: error.message });
   }
 }
