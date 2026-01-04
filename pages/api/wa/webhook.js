@@ -226,17 +226,25 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { Body, From, To, NumMedia, MediaUrl0 } = req.body;
+    // Log completo del body para debug
+    console.log('📦 Full webhook body:', JSON.stringify(req.body, null, 2));
+    
+    const { Body, From, To, NumMedia, MediaUrl0, MediaContentType0 } = req.body;
     const userId = From;
-    const userMessage = Body ? Body.trim() : ''; // NO convertir a lowercase
-    const userMessageLower = userMessage.toLowerCase(); // Para comandos
+    const userMessage = Body ? Body.trim() : '';
+    const userMessageLower = userMessage.toLowerCase();
     const hasImage = NumMedia && parseInt(NumMedia) > 0;
 
     console.log('📱 From:', userId);
     console.log('💬 Message:', userMessage || '[empty]');
+    console.log('🔢 NumMedia:', NumMedia);
     console.log('🖼️ Has image:', hasImage);
+    if (hasImage) {
+      console.log('🌐 MediaUrl0:', MediaUrl0);
+      console.log('📄 MediaContentType0:', MediaContentType0);
+    }
 
-    // Commands (usar versión lowercase)
+    // Commands
     if (userMessageLower.startsWith('/modelo ') || userMessageLower.startsWith('/model ')) {
       const modelName = userMessageLower.replace(/^\/mode[lo]\s+/, '').trim();
       if (MODELS[modelName]) {
@@ -308,11 +316,17 @@ export default async function handler(req, res) {
       if (modelConfig.vision) {
         console.log('🖼️ Fetching image from:', MediaUrl0);
         const imageResponse = await fetch(MediaUrl0);
+        
+        if (!imageResponse.ok) {
+          console.error('❌ Failed to fetch image:', imageResponse.status, imageResponse.statusText);
+          throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+        }
+        
         const imageBuffer = await imageResponse.arrayBuffer();
         const base64Image = Buffer.from(imageBuffer).toString('base64');
-        const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+        const mimeType = MediaContentType0 || imageResponse.headers.get('content-type') || 'image/jpeg';
         
-        console.log(`📸 Image downloaded: ${mimeType}, size: ${base64Image.length} chars`);
+        console.log(`📸 Image downloaded: ${mimeType}, size: ${base64Image.length} chars (${Math.round(base64Image.length/1024)}KB)`);
         
         userContent = [
           { type: 'text', text: userMessage || '¿Qué ves en esta imagen?' },
@@ -320,6 +334,7 @@ export default async function handler(req, res) {
         ];
         
         logMessage = userMessage ? `${userMessage} [con imagen]` : '[imagen]';
+        console.log('✅ Image content array created successfully');
       } else {
         await twilioClient.messages.create({
           body: `⚠️ El modelo *${selectedModel}* no soporta imágenes. Usa: /modelo gemini`,
