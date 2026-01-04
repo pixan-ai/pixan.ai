@@ -14,7 +14,7 @@ const StatusIcon = ({ status }) => {
   return icons[status] || icons.error;
 };
 
-const BalanceItem = ({ label, value, status, icon: Icon }) => (
+const BalanceItem = ({ label, value, status, icon: Icon, subtitle }) => (
   <div className="flex items-center gap-2 px-3 first:pl-0">
     <StatusIcon status={status} />
     <div className="text-center">
@@ -23,6 +23,7 @@ const BalanceItem = ({ label, value, status, icon: Icon }) => (
         {label}
       </p>
       <p className="text-sm font-semibold text-gray-900">{value}</p>
+      {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
     </div>
   </div>
 );
@@ -90,7 +91,18 @@ export default function BalanceStatus({ balances, loading, error }) {
         {balances.upstash && (
           <BalanceItem
             label="Upstash"
-            value={balances.upstash.message || 'Connected'}
+            value={
+              balances.upstash.commandsUsed !== undefined
+                ? `${balances.upstash.commandsUsed.toLocaleString()}/${balances.upstash.dailyLimit.toLocaleString()}`
+                : balances.upstash.message || 'Connected'
+            }
+            subtitle={
+              balances.upstash.percentUsed !== undefined
+                ? `${balances.upstash.percentUsed}% usado`
+                : balances.upstash.storageMB !== undefined
+                ? `${balances.upstash.storageMB} MB`
+                : undefined
+            }
             status={balances.upstash.status}
             icon={Database}
           />
