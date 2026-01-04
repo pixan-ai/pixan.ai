@@ -12,20 +12,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    // AI Gateway - usar mismo endpoint que genAI
+    // AI Gateway - endpoint real
     let aiGateway = { status: 'error', balance: 0, currency: 'USD' };
     try {
       const response = await fetch('https://ai-gateway.vercel.sh/v1/credits', {
-        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY}`
         }
       });
-
+      
       if (response.ok) {
         const data = await response.json();
-        const balance = parseFloat(data.balance) || 0;
+        const balance = data.balance || 0;
         aiGateway = {
           status: balance > 5 ? 'ok' : balance > 1 ? 'warning' : 'error',
           balance,
@@ -36,7 +34,7 @@ export default async function handler(req, res) {
       console.error('Error fetching AI Gateway balance:', err);
     }
 
-    // Twilio
+    // Twilio - API real
     let twilioBalance = { status: 'error', balance: 0, currency: 'USD' };
     try {
       const client = twilio(
@@ -53,23 +51,37 @@ export default async function handler(req, res) {
       console.error('Error fetching Twilio balance:', err);
     }
 
-    // Gemini - free tier doesn't have balance API, just quota
+    // Gemini - free tier no tiene API de balance, solo quota estimada
+    // Podríamos trackear uso real desde Redis si lo implementamos
+    let geminiQuotaUsed = 0;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const usageKey = `gemini:usage:${today}`;
+      const usage = await redis.get(usageKey);
+      geminiQuotaUsed = usage ? parseInt(usage) : 0;
+    } catch (err) {
+      console.error('Error getting Gemini usage:', err);
+    }
+
     const gemini = {
-      status: 'ok',
-      quotaUsed: 342,
+      status: geminiQuotaUsed < 1200 ? 'ok' : 'warning',
+      quotaUsed: geminiQuotaUsed,
       quotaLimit: 1500,
       note: 'Free tier - 1,500 requests/day'
     };
 
-    // Upstash
+    // Upstash - Comandos reales desde Redis
     let upstash = { status: 'ok', commandsUsed: 0, dailyLimit: 10000, percentUsed: 0 };
     try {
-      const commands = await redis.get('upstash:commands:count') || 0;
-      const dailyLimit = 10000;
+      // Contar comandos del día actual
+      const today = new Date().toISOString().split('T')[0];
+      const commandKey = `upstash:commands:${today}`;
+      const commands = await redis.get(commandKey) || 0;
+      const dailyLimit = 10000; // Free tier de Upstash
       const percentUsed = Math.round((commands / dailyLimit) * 100);
       
       upstash = {
-        status: percentUsed > 80 ? 'warning' : 'ok',
+        status: percentUsed < 70 ? 'ok' : percentUsed < 90 ? 'warning' : 'error',
         commandsUsed: parseInt(commands),
         dailyLimit,
         percentUsed

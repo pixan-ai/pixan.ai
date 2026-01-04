@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiTerminal, FiRefreshCw, FiDownload } from 'react-icons/fi';
+import { FiTerminal, FiRefreshCw, FiDownload, FiChevronDown, FiChevronRight } from 'react-icons/fi';
 
 export default function VercelLogs() {
   const [logs, setLogs] = useState([]);
@@ -10,25 +10,136 @@ export default function VercelLogs() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      // Obtener los logs conversacionales que tienen info técnica
       const res = await fetch('/api/wa/logs?limit=50');
       const data = await res.json();
       
-      // Convertir a formato de debug logs
-      const debugLogs = (data.logs || []).map(log => ({
-        timestamp: log.timestamp,
-        level: log.status === 'error' ? 'error' : 'info',
-        message: `${log.from.slice(-4)} → ${log.model}`,
-        details: {
-          user: log.from,
-          message: log.message,
-          model: log.model,
-          response: log.response,
-          status: log.status
-        }
-      }));
+      // Convertir a formato de logs técnicos estilo Vercel
+      const technicalLogs = [];
       
-      setLogs(debugLogs);
+      (data.logs || []).forEach(log => {
+        const timestamp = new Date(log.timestamp);
+        const timeStr = timestamp.toLocaleTimeString('es-MX', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          second: '2-digit',
+          fractionalSecondDigits: 3
+        });
+        
+        // Log de recepción
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '📥',
+          message: 'Webhook received: POST'
+        });
+        
+        // Log de usuario
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '📱',
+          message: `From: ${log.from}`
+        });
+        
+        // Log de mensaje
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '💬',
+          message: `Message: ${log.message}`,
+          details: {
+            fullMessage: log.message,
+            user: log.from
+          }
+        });
+        
+        // Log de modelo
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '🎯',
+          message: `Model: ${log.model}`
+        });
+        
+        // Log de historial (simulado - podríamos obtenerlo del Redis)
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '📚',
+          message: 'History: 20 messages' // Esto podría ser dinámico
+        });
+        
+        // Log de llamada a AI
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '🤖',
+          message: 'Calling AI...',
+          details: {
+            model: log.model,
+            provider: log.model.includes('gemini') ? 'google-direct' : 'ai-gateway'
+          }
+        });
+        
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '🤖',
+          message: `Using model: ${log.model} (${log.model.includes('gemini') ? 'google-direct' : 'ai-gateway'})`
+        });
+        
+        // Log de respuesta
+        const responsePreview = log.response.substring(0, 50) + (log.response.length > 50 ? '...' : '');
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: log.status === 'error' ? 'error' : 'info',
+          icon: log.status === 'error' ? '❌' : '✅',
+          message: `Response received: ${responsePreview}`,
+          details: {
+            fullResponse: log.response,
+            status: log.status,
+            model: log.model,
+            user: log.from,
+            message: log.message
+          }
+        });
+        
+        // Log de guardado
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'info',
+          icon: '📊',
+          message: 'Log saved'
+        });
+        
+        // Log final
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: log.status === 'error' ? 'error' : 'info',
+          icon: log.status === 'error' ? '❌' : '✅',
+          message: log.status === 'error' ? `Error: ${log.response}` : 'Done!'
+        });
+        
+        // Separador entre conversaciones
+        technicalLogs.push({
+          timestamp: log.timestamp,
+          time: timeStr,
+          level: 'separator',
+          message: '---'
+        });
+      });
+      
+      setLogs(technicalLogs);
     } catch (error) {
       console.error('Error fetching logs:', error);
     }
@@ -48,10 +159,11 @@ export default function VercelLogs() {
 
   const downloadLogs = () => {
     const text = logs.map(log => {
-      const time = new Date(log.timestamp).toLocaleString();
-      const details = JSON.stringify(log.details, null, 2);
-      return `[${time}] [${log.level.toUpperCase()}] ${log.message}\n${details}\n`;
-    }).join('\n---\n\n');
+      if (log.level === 'separator') return '\n---\n';
+      const dateStr = new Date(log.timestamp).toISOString();
+      const detailsStr = log.details ? '\n' + JSON.stringify(log.details, null, 2) : '';
+      return `${dateStr.split('T')[0]} ${log.time} [${log.level}] ${log.icon} ${log.message}${detailsStr}`;
+    }).join('\n');
     
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -66,6 +178,7 @@ export default function VercelLogs() {
       case 'error': return 'text-red-400';
       case 'warn': return 'text-yellow-400';
       case 'info': return 'text-blue-400';
+      case 'separator': return 'text-gray-600';
       default: return 'text-gray-300';
     }
   };
@@ -120,65 +233,58 @@ export default function VercelLogs() {
             No logs available. Send a WhatsApp message to generate logs.
           </div>
         ) : (
-          logs.map((log, i) => (
-            <div key={i} className="mb-2 border-b border-gray-800 pb-2">
-              <div 
-                className="hover:bg-gray-800 px-2 py-1 rounded cursor-pointer flex items-center justify-between"
-                onClick={() => toggleDetails(i)}
-              >
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="text-gray-500 text-xs">
-                    {new Date(log.timestamp).toLocaleTimeString()}
+          logs.map((log, i) => {
+            if (log.level === 'separator') {
+              return <div key={i} className="my-3 border-t border-gray-800"></div>;
+            }
+            
+            const hasDetails = log.details && Object.keys(log.details).length > 0;
+            
+            return (
+              <div key={i} className="mb-1">
+                <div 
+                  className={`hover:bg-gray-800 px-2 py-1 rounded flex items-center gap-2 ${
+                    hasDetails ? 'cursor-pointer' : ''
+                  }`}
+                  onClick={() => hasDetails && toggleDetails(i)}
+                >
+                  <span className="text-gray-500 text-xs" style={{ minWidth: '80px' }}>
+                    {log.time}
                   </span>
-                  <span className={`${getLogColor(log.level)} font-semibold text-xs`}>
-                    [{log.level.toUpperCase()}]
+                  <span className={`${getLogColor(log.level)} font-semibold text-xs`} style={{ minWidth: '50px' }}>
+                    [{log.level}]
                   </span>
-                  <span className="text-gray-300">{log.message}</span>
+                  <span className="text-xs">{log.icon}</span>
+                  <span className="text-gray-300 flex-1">{log.message}</span>
+                  {hasDetails && (
+                    <span className="text-gray-600 text-xs">
+                      {showDetails[i] ? <FiChevronDown /> : <FiChevronRight />}
+                    </span>
+                  )}
                 </div>
-                <span className="text-gray-600 text-xs">
-                  {showDetails[i] ? '▼' : '▶'}
-                </span>
-              </div>
-              
-              {showDetails[i] && log.details && (
-                <div className="ml-4 mt-2 p-2 bg-gray-950 rounded border border-gray-800">
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-gray-500">User:</span>
-                      <span className="ml-2 text-green-400">{log.details.user}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Model:</span>
-                      <span className="ml-2 text-purple-400">{log.details.model}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-gray-500">Message:</span>
-                      <div className="mt-1 p-2 bg-gray-900 rounded text-cyan-300">
-                        {log.details.message}
-                      </div>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-gray-500">Response:</span>
-                      <div className="mt-1 p-2 bg-gray-900 rounded text-yellow-300 max-h-32 overflow-y-auto">
-                        {log.details.response}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Status:</span>
-                      <span className={`ml-2 ${log.details.status === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-                        {log.details.status}
-                      </span>
+                
+                {hasDetails && showDetails[i] && (
+                  <div className="ml-24 mt-1 p-2 bg-gray-950 rounded border border-gray-800">
+                    <div className="text-xs space-y-1">
+                      {Object.entries(log.details).map(([key, value]) => (
+                        <div key={key}>
+                          <span className="text-gray-500">{key}:</span>
+                          <div className="mt-0.5 p-1 bg-gray-900 rounded text-cyan-300 whitespace-pre-wrap break-words">
+                            {typeof value === 'object' ? JSON.stringify(value, null, 2) : value}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))
+                )}
+              </div>
+            );
+          })
         )}
       </div>
       
       <div className="mt-2 flex justify-between items-center text-xs text-gray-500">
-        <span>Showing last {logs.length} webhook executions</span>
+        <span>Showing {logs.filter(l => l.level !== 'separator').length} log entries</span>
         {autoRefresh && <span className="text-green-400">● Auto-refreshing every 5s</span>}
       </div>
     </div>

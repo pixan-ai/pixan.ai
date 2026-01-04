@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { ScrollText, RefreshCw, Download, Trash2 } from 'lucide-react';
+import { MessageSquare, RefreshCw, Download, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
 export default function LogsViewer() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const logsEndRef = useRef(null);
+  const [expandedLogs, setExpandedLogs] = useState({});
+  const logsContainerRef = useRef(null);
 
   useEffect(() => {
     loadLogs();
@@ -15,11 +16,6 @@ export default function LogsViewer() {
       return () => clearInterval(interval);
     }
   }, [autoRefresh]);
-
-  useEffect(() => {
-    // Auto-scroll al final cuando hay nuevos logs
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -35,11 +31,12 @@ export default function LogsViewer() {
   };
 
   const clearLogs = async () => {
-    if (!confirm('¿Seguro que quieres borrar todos los logs?')) return;
+    if (!confirm('¿Seguro que quieres borrar todas las conversaciones?')) return;
     
     try {
       await fetch('/api/wa/logs', { method: 'DELETE' });
       setLogs([]);
+      setExpandedLogs({});
     } catch (err) {
       console.error('Error clearing logs:', err);
     }
@@ -51,8 +48,30 @@ export default function LogsViewer() {
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `pixan-wa-logs-${new Date().toISOString()}.json`;
+    link.download = `pixan-wa-conversations-${new Date().toISOString()}.json`;
     link.click();
+  };
+
+  const toggleLog = (logId) => {
+    setExpandedLogs(prev => ({
+      ...prev,
+      [logId]: !prev[logId]
+    }));
+  };
+
+  const toggleAll = () => {
+    const allExpanded = Object.keys(expandedLogs).length === logs.length && 
+                       Object.values(expandedLogs).every(v => v);
+    
+    if (allExpanded) {
+      setExpandedLogs({});
+    } else {
+      const newExpanded = {};
+      logs.forEach(log => {
+        newExpanded[log.id] = true;
+      });
+      setExpandedLogs(newExpanded);
+    }
   };
 
   return (
@@ -61,11 +80,19 @@ export default function LogsViewer() {
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <ScrollText className="w-5 h-5 text-gray-700" />
-            <h2 className="text-lg font-semibold text-gray-900">Logs en Tiempo Real</h2>
+            <MessageSquare className="w-5 h-5 text-gray-700" />
+            <h2 className="text-lg font-semibold text-gray-900">Conversaciones en Tiempo Real</h2>
+            <span className="text-xs text-gray-500">({logs.length})</span>
           </div>
           
           <div className="flex items-center space-x-2">
+            <button
+              onClick={toggleAll}
+              className="px-3 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              {Object.values(expandedLogs).some(v => v) ? 'Colapsar todas' : 'Expandir todas'}
+            </button>
+            
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`px-3 py-1 text-sm rounded-md ${
@@ -102,50 +129,93 @@ export default function LogsViewer() {
         </div>
       </div>
 
-      {/* Logs Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+      {/* Logs Content - Con scroll y altura fija */}
+      <div 
+        ref={logsContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50"
+        style={{ maxHeight: '500px' }}
+      >
         {logs.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <ScrollText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No hay logs todavía</p>
+            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p>No hay conversaciones todavía</p>
           </div>
         ) : (
-          logs.map((log) => (
-            <div
-              key={log.id}
-              className={`bg-white rounded-lg p-3 border-l-4 ${
-                log.status === 'error' ? 'border-red-500' : 'border-green-500'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 text-xs text-gray-500">
-                    <span>{new Date(log.timestamp).toLocaleString()}</span>
-                    <span>•</span>
-                    <span className="font-mono">{log.from}</span>
-                    <span>•</span>
-                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                      {log.model}
-                    </span>
+          logs.map((log) => {
+            const isExpanded = expandedLogs[log.id];
+            
+            return (
+              <div
+                key={log.id}
+                className={`bg-white rounded-lg border-l-4 ${
+                  log.status === 'error' ? 'border-red-500' : 'border-green-500'
+                } transition-all duration-200`}
+              >
+                {/* Header Colapsable */}
+                <div 
+                  onClick={() => toggleLog(log.id)}
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                >
+                  <div className="flex items-center space-x-2 flex-1">
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-gray-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                    )}
+                    
+                    <div className="flex items-center space-x-2 text-xs text-gray-500">
+                      <span>{new Date(log.timestamp).toLocaleString('es-MX', { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        second: '2-digit'
+                      })}</span>
+                      <span>•</span>
+                      <span className="font-mono text-gray-600">{log.from.slice(-4)}</span>
+                      <span>•</span>
+                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                        {log.model}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-gray-400">
+                    {isExpanded ? 'Ocultar' : 'Ver detalles'}
                   </div>
                 </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div>
-                  <p className="text-xs font-semibold text-gray-600">Usuario:</p>
-                  <p className="text-sm text-gray-800">{log.message}</p>
-                </div>
                 
-                <div>
-                  <p className="text-xs font-semibold text-gray-600">Respuesta:</p>
-                  <p className="text-sm text-gray-800">{log.response}</p>
-                </div>
+                {/* Contenido Expandible */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-gray-600 mb-1">Usuario:</p>
+                      <p className="text-sm text-gray-800 bg-blue-50 p-2 rounded">{log.message}</p>
+                    </div>
+                    
+                    <div>
+                      <p className="text-xs font-semibold text-gray-600 mb-1">Respuesta del Bot:</p>
+                      <div className="text-sm text-gray-800 bg-green-50 p-2 rounded max-h-40 overflow-y-auto">
+                        {log.response}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between pt-2 text-xs text-gray-500">
+                      <span>ID: {log.id}</span>
+                      <span className={log.status === 'success' ? 'text-green-600' : 'text-red-600'}>
+                        {log.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
-        <div ref={logsEndRef} />
+      </div>
+      
+      {/* Footer con info */}
+      <div className="p-3 border-t border-gray-200 bg-white text-xs text-gray-500 flex justify-between items-center">
+        <span>💡 Click en cada conversación para ver detalles completos</span>
+        {autoRefresh && <span className="text-green-600">● Actualizando cada 5s</span>}
       </div>
     </div>
   );
