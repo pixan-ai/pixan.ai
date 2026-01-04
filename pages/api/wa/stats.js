@@ -1,9 +1,9 @@
-import { Redis } from '@upstash/redis';
+/**
+ * Stats API - Dashboard statistics
+ */
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+import { db } from '../../../lib/wa/redis.js';
+import { getLogs } from '../../../lib/wa/logger.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -11,21 +11,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    const totalMessages = await redis.get('stats:total_messages') || 0;
-    const activeUsers = await redis.get('stats:active_users') || 0;
-    const modelsUsed = 11; // Número fijo de modelos disponibles
-
+    const logs = await getLogs(100);
+    
+    // Count unique users
+    const uniqueUsers = new Set(logs.map(l => l.from).filter(Boolean));
+    
     res.status(200).json({
-      totalMessages: parseInt(totalMessages),
-      activeUsers: parseInt(activeUsers),
-      modelsUsed
+      totalMessages: logs.length,
+      activeUsers: uniqueUsers.size
     });
   } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(200).json({
-      totalMessages: 0,
-      activeUsers: 0,
-      modelsUsed: 11
-    });
+    console.error('Stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
