@@ -50,22 +50,51 @@ const getGeminiUsage = async () => {
   }
 };
 
-const getUpstashStatus = async () => {
+const getUpstashStats = async () => {
   try {
-    // Simple connection test - just check if Redis is accessible
-    await db.get('health:check');
+    // Call our new Upstash stats endpoint
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
+    
+    const response = await fetch(`${baseUrl}/api/wa/upstash-stats`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch Upstash stats');
+    }
+    
+    const stats = await response.json();
+    
+    // Determine status based on usage percentage
+    const percentUsed = stats.percent_daily_used || 0;
+    const status = percentUsed < 70 ? 'ok' : percentUsed < 90 ? 'warning' : 'error';
     
     return {
-      status: 'ok',
-      message: 'Connected',
-      dailyLimit: LIMITS.upstashDaily
+      status,
+      commandsUsed: stats.daily_commands || 0,
+      dailyLimit: stats.daily_limit || 10000,
+      percentUsed,
+      storageMB: parseFloat(stats.current_storage_mb || 0),
+      storageLimitMB: stats.storage_limit_mb || 256
     };
   } catch (error) {
-    return {
-      status: 'error',
-      message: 'Connection failed',
-      dailyLimit: LIMITS.upstashDaily
-    };
+    console.error('Upstash stats error:', error);
+    
+    // Fallback to simple connection check
+    try {
+      await db.get('health:check');
+      return {
+        status: 'ok',
+        message: 'Connected',
+        dailyLimit: LIMITS.upstashDaily
+      };
+    } catch {
+      return {
+        status: 'error',
+        message: 'Connection failed',
+        dailyLimit: LIMITS.upstashDaily
+      };
+    }
   }
 };
 
@@ -82,7 +111,7 @@ export default async function handler(req, res) {
         ...b
       })),
       getGeminiUsage(),
-      getUpstashStatus()
+      getUpstashStats()
     ]);
 
     res.status(200).json({ aiGateway, twilio, gemini, upstash });
