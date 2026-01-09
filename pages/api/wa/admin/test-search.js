@@ -3,7 +3,7 @@
  * POST - Test a search query
  */
 
-import { queryKnowledgeBase } from '../../../lib/wa/file-search.js';
+import { queryKnowledgeBase } from '../../../../lib/wa/file-search.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
