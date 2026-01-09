@@ -1,15 +1,17 @@
 /**
- * WhatsApp Dashboard - Admin Panel
+ * WhatsApp Dashboard - Admin Panel with RAG
  * Clean, responsive dashboard using custom hook
  */
 
 import Head from 'next/head';
-import { Activity, MessageSquare, Cpu } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, MessageSquare, Cpu, FileText, Database } from 'lucide-react';
 import { useWADashboard } from '../hooks/useWADashboard';
 import BalanceStatus from '../components/WA/BalanceStatus';
 import LogsViewer from '../components/WA/LogsViewer';
 import SystemPromptEditor from '../components/WA/SystemPromptEditor';
 import VercelLogs from '../components/WA/VercelLogs';
+import RAGManager from '../components/WA/RAGManager';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-200">
@@ -26,6 +28,8 @@ const StatCard = ({ icon: Icon, label, value, color }) => (
 );
 
 export default function WADashboard() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  
   const {
     balances,
     logs,
@@ -37,6 +41,12 @@ export default function WADashboard() {
     fetchLogs,
     clearLogs
   } = useWADashboard();
+
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: Activity },
+    { id: 'rag', label: 'Documentos RAG', icon: Database },
+    { id: 'logs', label: 'Logs Técnicos', icon: FileText },
+  ];
 
   return (
     <>
@@ -69,52 +79,88 @@ export default function WADashboard() {
           </div>
         </header>
 
+        {/* Tabs Navigation */}
+        <div className="bg-white border-b">
+          <div className="max-w-7xl mx-auto px-4">
+            <nav className="flex gap-8">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-4 border-b-2 transition ${
+                      activeTab === tab.id
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="font-medium">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
         {/* Main */}
-        <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard
-              icon={MessageSquare}
-              label="Mensajes Totales"
-              value={stats.totalMessages}
-              color="bg-blue-100 text-blue-600"
-            />
-            <StatCard
-              icon={Activity}
-              label="Usuarios Activos"
-              value={stats.activeUsers}
-              color="bg-green-100 text-green-600"
-            />
-            <StatCard
-              icon={Cpu}
-              label="Modelos Disponibles"
-              value={11}
-              color="bg-purple-100 text-purple-600"
-            />
-          </div>
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              {/* Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <StatCard
+                  icon={MessageSquare}
+                  label="Mensajes Totales"
+                  value={stats.totalMessages}
+                  color="bg-blue-100 text-blue-600"
+                />
+                <StatCard
+                  icon={Activity}
+                  label="Usuarios Activos"
+                  value={stats.activeUsers}
+                  color="bg-green-100 text-green-600"
+                />
+                <StatCard
+                  icon={Cpu}
+                  label="Modelos Disponibles"
+                  value={11}
+                  color="bg-purple-100 text-purple-600"
+                />
+              </div>
 
-          {/* Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* System Prompt */}
-            <div className="bg-white rounded-lg shadow-sm border">
-              <SystemPromptEditor />
+              {/* Content Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* System Prompt */}
+                <div className="bg-white rounded-lg shadow-sm border">
+                  <SystemPromptEditor />
+                </div>
+
+                {/* Logs */}
+                <div className="bg-white rounded-lg shadow-sm border">
+                  <LogsViewer
+                    logs={logs}
+                    loading={loading.logs}
+                    autoRefresh={autoRefresh}
+                    onRefresh={fetchLogs}
+                    onClear={clearLogs}
+                    onToggleAutoRefresh={() => setAutoRefresh(!autoRefresh)}
+                  />
+                </div>
+              </div>
             </div>
+          )}
 
-            {/* Logs */}
+          {activeTab === 'rag' && (
             <div className="bg-white rounded-lg shadow-sm border">
-              <LogsViewer
-                logs={logs}
-                loading={loading.logs}
-                autoRefresh={autoRefresh}
-                onRefresh={fetchLogs}
-                onClear={clearLogs}
-                onToggleAutoRefresh={() => setAutoRefresh(!autoRefresh)}
-              />
+              <RAGManager />
             </div>
-          </div>
+          )}
 
-          {/* Technical Logs - Full Width */}
-          <VercelLogs />
+          {activeTab === 'logs' && (
+            <VercelLogs />
+          )}
         </main>
 
         {/* Footer */}
