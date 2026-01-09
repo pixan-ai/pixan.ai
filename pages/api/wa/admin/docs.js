@@ -8,7 +8,7 @@
 
 import formidable from 'formidable';
 import { readFileSync, unlinkSync } from 'fs';
-import { redis } from '../../../../lib/wa/redis.js';
+import { getRedis } from '../../../../lib/wa/redis.js';
 
 // Redis keys
 const DOCS_KEY = 'wa:knowledge:docs';
@@ -26,10 +26,12 @@ export const config = {
  */
 async function handleGet(req, res) {
   try {
+    const redis = getRedis();
     const docs = await redis.hgetall(DOCS_KEY);
     
     const documents = Object.entries(docs || {}).map(([id, data]) => {
-      const parsed = JSON.parse(data);
+      // Handle both string and object data
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       return {
         id,
         name: parsed.name,
@@ -102,7 +104,8 @@ async function handlePost(req, res) {
     };
 
     // Save to Redis
-    await redis.hset(DOCS_KEY, docId, JSON.stringify(metadata));
+    const redis = getRedis();
+    await redis.hset(DOCS_KEY, { [docId]: JSON.stringify(metadata) });
     await redis.set(`${DOCS_CONTENT_PREFIX}${docId}`, content);
 
     // Clean up temp file
@@ -147,6 +150,7 @@ async function handleDelete(req, res) {
     }
 
     // Remove from Redis
+    const redis = getRedis();
     await redis.hdel(DOCS_KEY, id);
     await redis.del(`${DOCS_CONTENT_PREFIX}${id}`);
 
