@@ -1,16 +1,18 @@
 /**
- * API for managing File Search documents
+ * API for managing knowledge base documents
+ * Stores documents in Redis for RAG queries
  * GET - List all documents
  * POST - Upload new document
  * DELETE - Remove document
  */
 
-import { GoogleAIFileManager } from '@google/generative-ai';
 import formidable from 'formidable';
 import { readFileSync, unlinkSync } from 'fs';
-import { getOrCreateStore } from '../../../../lib/wa/file-search.js';
+import { redis } from '../../../../lib/wa/redis.js';
 
-const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+// Redis keys
+const DOCS_KEY = 'wa:knowledge:docs';
+const DOCS_CONTENT_PREFIX = 'wa:knowledge:content:';
 
 // Disable bodyParser for file uploads
 export const config = {
@@ -24,27 +26,27 @@ export const config = {
  */
 async function handleGet(req, res) {
   try {
-    const storeName = await getOrCreateStore();
+    const docs = await redis.hgetall(DOCS_KEY);
     
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${storeName}/documents`,
-      {
-        headers: { 'X-Goog-Api-Key': process.env.GEMINI_API_KEY }
-      }
-    );
+    const documents = Object.entries(docs || {}).map(([id, data]) => {
+      const parsed = JSON.parse(data);
+      return {
+        id,
+        name: parsed.name,
+        displayName: parsed.displayName,
+        size: parsed.size,
+        mimeType: parsed.mimeType,
+        uploadedAt: parsed.uploadedAt,
+      };
+    });
 
-    const data = await response.json();
-    const documents = data.documents || [];
-    
+    // Sort by upload date (newest first)
+    documents.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+
     return res.status(200).json({
       success: true,
       count: documents.length,
-      documents: documents.map(doc => ({
-        name: doc.name,
-        displayName: doc.displayName,
-        createTime: doc.createTime,
-        updateTime: doc.updateTime,
-      }))
+      documents
     });
   } catch (error) {
     console.error('❌ Error listando documentos:', error);
@@ -62,7 +64,7 @@ async function handlePost(req, res) {
   try {
     // Parse form data
     const form = formidable({
-      maxFileSize: 100 * 1024 * 1024, // 100 MB
+      maxFileSize: 10 * 1024 * 1024, // 10 MB max for text docs
     });
 
     const [fields, files] = await new Promise((resolve, reject) => {
@@ -84,50 +86,40 @@ async function handlePost(req, res) {
 
     console.log(`📤 Subiendo archivo: ${displayName}`);
 
-    // Upload file to Gemini
-    const uploadResult = await fileManager.uploadFile(file.filepath, {
-      mimeType: file.mimetype,
-      displayName: displayName,
-    });
-
-    console.log(`✅ Archivo subido: ${uploadResult.file.uri}`);
-
-    // Import to File Search Store
-    const storeName = await getOrCreateStore();
+    // Read file content
+    const content = readFileSync(file.filepath, 'utf-8');
     
-    const importResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${storeName}/documents:import`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': process.env.GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          inlineSource: {
-            name: uploadResult.file.name
-          }
-        })
-      }
-    );
+    // Generate unique ID
+    const docId = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    if (!importResponse.ok) {
-      const errorText = await importResponse.text();
-      throw new Error(`Error importando archivo: ${importResponse.statusText} - ${errorText}`);
-    }
+    // Store document metadata
+    const metadata = {
+      name: file.originalFilename,
+      displayName: displayName,
+      size: file.size,
+      mimeType: file.mimetype,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    // Save to Redis
+    await redis.hset(DOCS_KEY, docId, JSON.stringify(metadata));
+    await redis.set(`${DOCS_CONTENT_PREFIX}${docId}`, content);
 
     // Clean up temp file
-    unlinkSync(file.filepath);
+    try {
+      unlinkSync(file.filepath);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
 
-    console.log(`✅ Documento importado al store: ${displayName}`);
+    console.log(`✅ Documento guardado: ${displayName} (${docId})`);
 
     return res.status(200).json({
       success: true,
       message: `Documento "${displayName}" subido exitosamente`,
       document: {
-        fileUri: uploadResult.file.uri,
-        fileName: uploadResult.file.name,
-        displayName: displayName,
+        id: docId,
+        ...metadata
       }
     });
 
@@ -145,30 +137,20 @@ async function handlePost(req, res) {
  */
 async function handleDelete(req, res) {
   try {
-    const { name } = req.query;
+    const { id } = req.query;
 
-    if (!name) {
+    if (!id) {
       return res.status(400).json({
         success: false,
-        error: 'No se proporcionó nombre de documento'
+        error: 'No se proporcionó ID de documento'
       });
     }
 
-    const storeName = await getOrCreateStore();
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${storeName}/documents/${name}`,
-      {
-        method: 'DELETE',
-        headers: { 'X-Goog-Api-Key': process.env.GEMINI_API_KEY }
-      }
-    );
+    // Remove from Redis
+    await redis.hdel(DOCS_KEY, id);
+    await redis.del(`${DOCS_CONTENT_PREFIX}${id}`);
 
-    if (!response.ok) {
-      throw new Error(`Error eliminando documento: ${response.statusText}`);
-    }
-
-    console.log(`🗑️ Documento eliminado: ${name}`);
+    console.log(`🗑️ Documento eliminado: ${id}`);
 
     return res.status(200).json({
       success: true,
