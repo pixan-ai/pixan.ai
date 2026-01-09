@@ -1,13 +1,14 @@
 /**
  * WhatsApp Webhook - Pixan Bot
- * Clean, simplified handler using service architecture
+ * With Gemini File Search integration and model alerts
  */
 
-import { MODELS, DEFAULT_MODEL, getHelpText, getModelInfo } from '../../../lib/wa/config.js';
+import { MODELS, DEFAULT_MODEL, getHelpText, getModelInfo, getModelAlert } from '../../../lib/wa/config.js';
 import { sendMessage, downloadMedia } from '../../../lib/wa/twilio.js';
 import { chat, supportsVision } from '../../../lib/wa/ai.js';
 import { getUserModel, setUserModel, clearMemory, addToMemory, buildMessages } from '../../../lib/wa/memory.js';
 import { saveLog, logTechnical } from '../../../lib/wa/logger.js';
+import { needsKnowledgeBase, queryKnowledgeBase, listDocuments } from '../../../lib/wa/file-search.js';
 
 // Parse incoming WhatsApp message
 const parseMessage = (body) => ({
@@ -32,9 +33,18 @@ const commands = {
     await setUserModel(userId, modelId);
     const model = MODELS[modelId];
     const cost = model.free ? '💰 GRATIS' : '💳 Premium';
-    const vision = model.vision ? '📷 Con visión' : '📝 Solo texto';
+    const vision = model.vision ? '✅ Analiza imágenes' : '❌ Sin imágenes';
+    const knowledge = model.knowledgeBase ? '✅ Base de conocimiento' : '❌ Sin base conocimiento';
     
-    return `✅ Modelo cambiado a *${modelId}*\n${cost}\n${vision}`;
+    let response = `✅ Modelo cambiado a *${model.name}*\n${cost}\n${vision}\n${knowledge}`;
+    
+    // Add alert if model has limitations
+    const alert = getModelAlert(modelId);
+    if (alert) {
+      response += `\n\n${alert}`;
+    }
+    
+    return response;
   },
   
   async ayuda(userId) {
@@ -49,6 +59,27 @@ const commands = {
   async reset(userId) {
     await clearMemory(userId);
     return '🧹 Memoria borrada. Empezamos de nuevo.';
+  },
+  
+  async docs(userId) {
+    try {
+      const documents = await listDocuments();
+      
+      if (documents.length === 0) {
+        return '📚 *Base de Conocimiento Pixan*\n\nNo hay documentos cargados aún.\n\nLos administradores pueden subir documentos en:\npixan.ai/wa/admin/docs';
+      }
+      
+      let response = '📚 *Base de Conocimiento Pixan*\n\nDocumentos disponibles:\n\n';
+      documents.forEach((doc, index) => {
+        response += `${index + 1}. ${doc.displayName || doc.name}\n`;
+      });
+      
+      response += `\n_Total: ${documents.length} documentos_\n\n💡 Solo disponible con /gemini`;
+      
+      return response;
+    } catch (error) {
+      return '❌ Error consultando documentos. Intenta de nuevo.';
+    }
   }
 };
 
@@ -57,8 +88,9 @@ const processImage = async (msg, modelId) => {
   if (!msg.hasMedia || !msg.mediaUrl) return null;
   
   if (!supportsVision(modelId)) {
+    const model = MODELS[modelId];
     return {
-      error: `⚠️ El modelo *${modelId}* no soporta imágenes.\n\nUsa: /modelo gemini`
+      error: `❌ *No puedo analizar imágenes con ${model.name}*\n\nPara análisis de imágenes, cambia a Gemini con: /gemini`
     };
   }
   
@@ -112,7 +144,17 @@ export default async function handler(req, res) {
 
     // Get user's model
     const modelId = await getUserModel(msg.userId);
+    const modelInfo = MODELS[modelId];
     await logTechnical(`🤖 Modelo: ${modelId}`);
+    
+    // Check if needs knowledge base but model doesn't support it
+    if (needsKnowledgeBase(msg.text) && !modelInfo.knowledgeBase) {
+      const alert = `⚠️ *Esta pregunta requiere la base de conocimiento de Pixan*\n\nPero ${modelInfo.name} no puede consultarla.\n\nCambia a Gemini para obtener información sobre:\n• Comisiones\n• Productos\n• Manejo de objeciones\n• Políticas\n\nUsa: /gemini`;
+      
+      await sendMessage(msg.userId, alert);
+      await logTechnical('⚠️ Pregunta requiere conocimiento pero modelo no lo soporta');
+      return res.status(200).json({ ok: true, alert: 'knowledge_not_available' });
+    }
     
     // Process image if present
     let userContent = msg.text;
@@ -133,20 +175,35 @@ export default async function handler(req, res) {
       }
     }
 
-    // Build conversation messages
-    await logTechnical('📦 Construyendo contexto de conversación...');
-    const messages = await buildMessages(msg.userId, userContent, modelId);
-    await logTechnical(`💬 ${messages.length} mensajes en contexto`);
-    
-    // Call AI
+    // Call AI with File Search if using Gemini and needs knowledge
     let response;
     let status = 'success';
+    let usedKnowledge = false;
     
     try {
-      await logTechnical(`🧠 Llamando a ${modelId}...`);
-      const aiStart = Date.now();
-      response = await chat(messages, modelId);
-      await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
+      // Use File Search for Gemini if message needs knowledge base
+      if (modelId === 'gemini' && needsKnowledgeBase(msg.text)) {
+        await logTechnical('🔍 Usando File Search para consulta de conocimiento');
+        
+        // Build history for File Search
+        const history = await buildMessages(msg.userId, null, modelId);
+        
+        const knowledgeResult = await queryKnowledgeBase(msg.text, history);
+        response = knowledgeResult.text;
+        usedKnowledge = knowledgeResult.usedKnowledge;
+        
+        await logTechnical(`✅ Respuesta obtenida${usedKnowledge ? ' de base de conocimiento' : ''}`);
+      } else {
+        // Standard AI call
+        await logTechnical('📦 Construyendo contexto de conversación...');
+        const messages = await buildMessages(msg.userId, userContent, modelId);
+        await logTechnical(`💬 ${messages.length} mensajes en contexto`);
+        
+        await logTechnical(`🧠 Llamando a ${modelId}...`);
+        const aiStart = Date.now();
+        response = await chat(messages, modelId);
+        await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
+      }
     } catch (error) {
       console.error('❌ AI Error:', error.message);
       await logTechnical(`❌ Error AI: ${error.message}`);
@@ -186,13 +243,14 @@ export default async function handler(req, res) {
       message: logMessage,
       response: response.substring(0, 500),
       model: modelId,
-      status
+      status,
+      usedKnowledge
     });
 
     const totalTime = Date.now() - startTime;
     await logTechnical(`✅ Completado en ${totalTime}ms`);
     
-    return res.status(200).json({ ok: true, model: modelId, status, time: totalTime });
+    return res.status(200).json({ ok: true, model: modelId, status, time: totalTime, usedKnowledge });
 
   } catch (error) {
     console.error('❌ Webhook Error:', error);
