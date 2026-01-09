@@ -1,0 +1,65 @@
+ESTRUCTURA DE COMISIONES PIXAN 2025
+
+================================================
+COMISIONES POR PRODUCTO
+================================================
+
+LÍNEA FACIAL:
+-------------
+Crema Facial Nutritiva
+  • Precio sugerido: $200 MXN
+  • Comisión: 15% sobre precio de venta
+  • Ejemplo: Venta de $200 = $30 de comisión
+
+Sérum Anti-edad
+  • Precio sugerido: $350 MXN
+  • Comisión: 18% sobre precio de venta
+  • Ejemplo: Venta de $350 = $63 de comisión
+
+LÍNEA CAPILAR:
+--------------
+Shampoo Fortalecedor
+  • Precio sugerido: $150 MXN
+  • Comisión: 10% sobre precio de venta
+  • Ejemplo: Venta de $150 = $15 de comisión
+
+Tratamiento Capilar Intensivo
+  • Precio sugerido: $300 MXN
+  • Comisión: 20% sobre precio de venta
+  • Ejemplo: Venta de $300 = $60 de comisión
+
+KITS Y COMBOS:
+--------------
+Kit Facial Completo (Crema + Sérum)
+  • Precio combo: $500 MXN (descuento de $50)
+  • Comisión: 18% sobre precio de venta
+  • Ejemplo: Venta de $500 = $90 de comisión
+
+================================================
+BONOS ADICIONALES
+================================================
+
+BONO POR VOLUMEN MENSUAL:
+-------------------------
+• Ventas mensuales $10,000 - $19,999: Bono 5% adicional
+• Ventas mensuales $20,000 - $29,999: Bono 8% adicional  
+• Ventas mensuales $30,000 o más: Bono 12% adicional
+
+BONO POR CLIENTES NUEVOS:
+-------------------------
+• Por cada cliente nuevo registrado: $50 MXN adicionales
+
+================================================
+PREGUNTAS FRECUENTES
+================================================
+
+P: ¿Cuánto gano por vender una crema facial?
+R: 15% sobre el precio de venta. Si vendes a $200, ganas $30.
+
+P: ¿Cuánto gano por vender shampoo?
+R: 10% sobre el precio de venta. Si vendes a $150, ganas $15.
+
+P: ¿Las comisiones incluyen IVA?
+R: No, las comisiones se calculan sin IVA.
+
+Última actualización: Enero 2025
