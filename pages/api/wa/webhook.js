@@ -6,7 +6,7 @@
 import { MODELS, DEFAULT_MODEL, getHelpText, getModelInfo, getModelAlert } from '../../../lib/wa/config.js';
 import { sendMessage, downloadMedia } from '../../../lib/wa/twilio.js';
 import { chat, supportsVision } from '../../../lib/wa/ai.js';
-import { getUserModel, setUserModel, clearMemory, addToMemory, buildMessages } from '../../../lib/wa/memory.js';
+import { getUserModel, setUserModel, clearMemory, addToMemory, buildMessages, getMemory } from '../../../lib/wa/memory.js';
 import { saveLog, logTechnical } from '../../../lib/wa/logger.js';
 import { needsKnowledgeBase, queryKnowledgeBase, listDocuments } from '../../../lib/wa/file-search.js';
 
@@ -175,35 +175,25 @@ export default async function handler(req, res) {
       }
     }
 
-    // Call AI with File Search if using Gemini and needs knowledge
+    // Call AI - ALWAYS use buildMessages to include conversation history
     let response;
     let status = 'success';
     let usedKnowledge = false;
     
     try {
-      // Use File Search for Gemini if message needs knowledge base
-      if (modelId === 'gemini' && needsKnowledgeBase(msg.text)) {
-        await logTechnical('🔍 Usando File Search para consulta de conocimiento');
-        
-        // Build history for File Search
-        const history = await buildMessages(msg.userId, null, modelId);
-        
-        const knowledgeResult = await queryKnowledgeBase(msg.text, history);
-        response = knowledgeResult.text;
-        usedKnowledge = knowledgeResult.usedKnowledge;
-        
-        await logTechnical(`✅ Respuesta obtenida${usedKnowledge ? ' de base de conocimiento' : ''}`);
-      } else {
-        // Standard AI call
-        await logTechnical('📦 Construyendo contexto de conversación...');
-        const messages = await buildMessages(msg.userId, userContent, modelId);
-        await logTechnical(`💬 ${messages.length} mensajes en contexto`);
-        
-        await logTechnical(`🧠 Llamando a ${modelId}...`);
-        const aiStart = Date.now();
-        response = await chat(messages, modelId);
-        await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
-      }
+      // Build messages with full conversation history
+      await logTechnical('📦 Construyendo contexto de conversación...');
+      const messages = await buildMessages(msg.userId, userContent, modelId);
+      await logTechnical(`💬 ${messages.length} mensajes en contexto`);
+      
+      await logTechnical(`🧠 Llamando a ${modelId}...`);
+      const aiStart = Date.now();
+      response = await chat(messages, modelId);
+      await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
+      
+      // Mark if this was a knowledge query
+      usedKnowledge = needsKnowledgeBase(msg.text);
+      
     } catch (error) {
       console.error('❌ AI Error:', error.message);
       await logTechnical(`❌ Error AI: ${error.message}`);
