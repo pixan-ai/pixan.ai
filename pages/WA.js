@@ -4,8 +4,9 @@
  */
 
 import Head from 'next/head';
+import Link from 'next/link';
 import { useState } from 'react';
-import { Activity, MessageSquare, Cpu, FileText, Database } from 'lucide-react';
+import { Activity, MessageSquare, Cpu, FileText, Database, FolderOpen, ArrowRight } from 'lucide-react';
 import { useWADashboard } from '../hooks/useWADashboard';
 import BalanceStatus from '../components/WA/BalanceStatus';
 import LogsViewer from '../components/WA/LogsViewer';
@@ -108,6 +109,29 @@ export default function WADashboard() {
         <main className="max-w-7xl mx-auto px-4 py-6">
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
+              {/* Knowledge Base Quick Access Card */}
+              <Link href="/wa/admin/docs">
+                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl shadow-lg p-6 text-white cursor-pointer hover:shadow-xl transition-all hover:scale-[1.01]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white/20 rounded-lg">
+                        <FolderOpen className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold">Base de Conocimiento</h2>
+                        <p className="text-purple-200 text-sm mt-1">
+                          Gestiona los documentos que el bot usa para responder preguntas sobre productos, comisiones y políticas
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition">
+                      <span className="font-medium">Administrar Documentos</span>
+                      <ArrowRight className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+              </Link>
+
               {/* Stats */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
