@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Upload, Trash2, Search, FileText, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, Trash2, Search, FileText, Loader2, CheckCircle, XCircle, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function DocsAdminPage() {
   const [documents, setDocuments] = useState([]);
@@ -83,13 +84,13 @@ export default function DocsAdminPage() {
     }
   };
 
-  const handleDelete = async (docName) => {
+  const handleDelete = async (docId) => {
     if (!confirm('¿Estás seguro de eliminar este documento?')) {
       return;
     }
 
     try {
-      const response = await fetch(`/api/wa/admin/docs?name=${encodeURIComponent(docName)}`, {
+      const response = await fetch(`/api/wa/admin/docs?id=${encodeURIComponent(docId)}`, {
         method: 'DELETE'
       });
 
@@ -145,6 +146,13 @@ export default function DocsAdminPage() {
     setTimeout(() => setMessage({ type: '', text: '' }), 5000);
   };
 
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
   const exampleQueries = [
     '¿Cuánto gano por vender shampoo?',
     'El cliente dice que está muy caro, ¿qué hago?',
@@ -158,6 +166,9 @@ export default function DocsAdminPage() {
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 mb-6">
           <div className="flex items-center gap-4 mb-4">
+            <Link href="/WA" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <ArrowLeft className="w-6 h-6 text-gray-600" />
+            </Link>
             <div className="p-3 bg-blue-500 rounded-xl">
               <FileText className="w-8 h-8 text-white" />
             </div>
@@ -166,7 +177,7 @@ export default function DocsAdminPage() {
                 📚 Base de Conocimiento Pixan
               </h1>
               <p className="text-gray-600 mt-1">
-                Administra documentos para el bot de WhatsApp con Gemini File Search
+                Administra documentos para el bot de WhatsApp
               </p>
             </div>
           </div>
@@ -218,9 +229,9 @@ export default function DocsAdminPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {documents.map((doc, index) => (
+                  {documents.map((doc) => (
                     <div
-                      key={index}
+                      key={doc.id}
                       className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl hover:shadow-md transition-shadow border border-blue-100"
                     >
                       <div className="flex-1 min-w-0">
@@ -230,18 +241,25 @@ export default function DocsAdminPage() {
                             {doc.displayName || doc.name}
                           </p>
                         </div>
-                        {doc.createTime && (
-                          <p className="text-xs text-gray-500 mt-1 ml-6">
-                            {new Date(doc.createTime).toLocaleDateString('es-MX', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </p>
-                        )}
+                        <div className="text-xs text-gray-500 mt-1 ml-6 flex items-center gap-3">
+                          {doc.uploadedAt && (
+                            <span>
+                              {new Date(doc.uploadedAt).toLocaleDateString('es-MX', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </span>
+                          )}
+                          {doc.size && (
+                            <span className="text-gray-400">
+                              {formatFileSize(doc.size)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button
-                        onClick={() => handleDelete(doc.name)}
+                        onClick={() => handleDelete(doc.id)}
                         className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Eliminar documento"
                       >
@@ -277,7 +295,7 @@ export default function DocsAdminPage() {
                     disabled={uploading}
                   />
                   <p className="text-xs text-gray-500 mt-2">
-                    Formatos: PDF, TXT, DOC, DOCX, XLS, XLSX, JSON, CSV, MD (max 100 MB)
+                    Formatos: PDF, TXT, DOC, DOCX, XLS, XLSX, JSON, CSV, MD (max 10 MB)
                   </p>
                 </div>
 
@@ -367,7 +385,7 @@ export default function DocsAdminPage() {
 
                   <div className="flex items-center justify-between text-xs text-gray-500 pt-3 border-t border-green-200">
                     <span className={testResult.usedKnowledge ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                      {testResult.usedKnowledge ? '✅ Usó File Search' : 'ℹ️ Respuesta directa'}
+                      {testResult.usedKnowledge ? '✅ Usó base de conocimiento' : 'ℹ️ Respuesta directa'}
                     </span>
                     <span>{testResult.duration}</span>
                   </div>
@@ -401,19 +419,19 @@ export default function DocsAdminPage() {
               <ul className="text-sm text-blue-800 space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
-                  <span>Los documentos se almacenan permanentemente en Gemini File Search</span>
+                  <span>Los documentos se almacenan de forma segura en la nube</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
-                  <span>Solo Gemini puede consultar estos documentos</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 mt-0.5">•</span>
-                  <span>El bot detecta automáticamente cuándo usar la base de conocimiento</span>
+                  <span>El bot usa esta información para responder preguntas</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
                   <span>Los cambios están disponibles inmediatamente</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600 mt-0.5">•</span>
+                  <span>Sube archivos de texto (.txt) para mejores resultados</span>
                 </li>
               </ul>
             </div>
