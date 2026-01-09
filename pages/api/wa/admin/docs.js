@@ -8,7 +8,7 @@
 import { GoogleAIFileManager } from '@google/generative-ai';
 import formidable from 'formidable';
 import { readFileSync, unlinkSync } from 'fs';
-import { getOrCreateStore } from '../../../lib/wa/file-search.js';
+import { getOrCreateStore } from '../../../../lib/wa/file-search.js';
 
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
