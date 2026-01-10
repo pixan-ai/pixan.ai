@@ -115,17 +115,21 @@ export default function HomePage() {
 
 
           <div className="service-buttons">
+            <a href="/WA" className="service-button whatsapp">
+              <div className="service-title">AI Sales Supervisor @WhatsApp</div>
+              <div className="service-description">Intelligent sales assistant powered by Gemini 3 Flash. Knowledge base, objection handling, and commission tracking via WhatsApp.</div>
+            </a>
             <a href="/genAI" className="service-button primary">
               <div className="service-title">Collaborative genAI</div>
               <div className="service-description">Single or supervised group responses from 7 LLMs. Claude integrates all perspectives. Infographic generation.</div>
             </a>
             <a href="https://braincolab.com/multiAI" className="service-button">
-              <div className="service-title">{t('landing.services.brainColab.title')}</div>
-              <div className="service-description">{t('landing.services.brainColab.description')}</div>
+              <div className="service-title">BrainColab Multi-AI</div>
+              <div className="service-description">Collaborative intelligence platform for teams. Real-time AI-powered brainstorming and decision making.</div>
             </a>
             <a href="https://www.pixan.ai/llmC" className="service-button">
-              <div className="service-title">{t('landing.services.chatMultiGenAI.title')}</div>
-              <div className="service-description">{t('landing.services.chatMultiGenAI.description')}</div>
+              <div className="service-title">Chat Multi-genAI</div>
+              <div className="service-description">Multi-model chat interface. Compare responses from different AI models side by side.</div>
             </a>
           </div>
         </main>
@@ -300,6 +304,18 @@ export default function HomePage() {
           background: #3d1a8f;
           transform: translateY(-2px);
           box-shadow: 0 10px 30px rgba(40, 16, 106, 0.3);
+        }
+
+        .service-button.whatsapp {
+          background: #25D366;
+          color: #ffffff;
+          border-color: #25D366;
+        }
+
+        .service-button.whatsapp:hover {
+          background: #1da851;
+          transform: translateY(-2px);
+          box-shadow: 0 10px 30px rgba(37, 211, 102, 0.3);
         }
 
         .service-title {
