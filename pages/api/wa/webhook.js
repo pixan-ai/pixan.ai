@@ -71,7 +71,7 @@ const commands = {
       
       let response = '📚 *Base de Conocimiento Pixan*\n\nDocumentos disponibles:\n\n';
       documents.forEach((doc, index) => {
-        response += `${index + 1}. ${doc.displayName || doc.name}\n`;
+        response += `${index + 1}. ${doc.name}\n`;
       });
       
       response += `\n_Total: ${documents.length} documentos_\n\n💡 Solo disponible con /gemini`;
@@ -147,8 +147,11 @@ export default async function handler(req, res) {
     const modelInfo = MODELS[modelId];
     await logTechnical(`🤖 Modelo: ${modelId}`);
     
+    // Check if needs knowledge base
+    const requiresKnowledge = needsKnowledgeBase(msg.text);
+    
     // Check if needs knowledge base but model doesn't support it
-    if (needsKnowledgeBase(msg.text) && !modelInfo.knowledgeBase) {
+    if (requiresKnowledge && !modelInfo.knowledgeBase) {
       const alert = `⚠️ *Esta pregunta requiere la base de conocimiento de Pixan*\n\nPero ${modelInfo.name} no puede consultarla.\n\nCambia a Gemini para obtener información sobre:\n• Comisiones\n• Productos\n• Manejo de objeciones\n• Políticas\n\nUsa: /gemini`;
       
       await sendMessage(msg.userId, alert);
@@ -175,24 +178,38 @@ export default async function handler(req, res) {
       }
     }
 
-    // Call AI - ALWAYS use buildMessages to include conversation history
+    // Call AI
     let response;
     let status = 'success';
     let usedKnowledge = false;
     
     try {
-      // Build messages with full conversation history
-      await logTechnical('📦 Construyendo contexto de conversación...');
-      const messages = await buildMessages(msg.userId, userContent, modelId);
-      await logTechnical(`💬 ${messages.length} mensajes en contexto`);
+      // Get conversation history for context
+      const memory = await getMemory(msg.userId);
+      const history = memory?.messages || [];
       
-      await logTechnical(`🧠 Llamando a ${modelId}...`);
-      const aiStart = Date.now();
-      response = await chat(messages, modelId);
-      await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
-      
-      // Mark if this was a knowledge query
-      usedKnowledge = needsKnowledgeBase(msg.text);
+      // Use knowledge base if query requires it AND model supports it
+      if (requiresKnowledge && modelInfo.knowledgeBase && !msg.hasMedia) {
+        await logTechnical('📚 Usando base de conocimiento...');
+        const aiStart = Date.now();
+        
+        const kbResult = await queryKnowledgeBase(msg.text, history);
+        response = kbResult.text;
+        usedKnowledge = kbResult.usedKnowledge;
+        
+        await logTechnical(`✅ Respuesta con conocimiento en ${Date.now() - aiStart}ms (${kbResult.documentsUsed} docs)`);
+        
+      } else {
+        // Standard chat without knowledge base
+        await logTechnical('📦 Construyendo contexto de conversación...');
+        const messages = await buildMessages(msg.userId, userContent, modelId);
+        await logTechnical(`💬 ${messages.length} mensajes en contexto`);
+        
+        await logTechnical(`🧠 Llamando a ${modelId}...`);
+        const aiStart = Date.now();
+        response = await chat(messages, modelId);
+        await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
+      }
       
     } catch (error) {
       console.error('❌ AI Error:', error.message);
@@ -238,7 +255,7 @@ export default async function handler(req, res) {
     });
 
     const totalTime = Date.now() - startTime;
-    await logTechnical(`✅ Completado en ${totalTime}ms`);
+    await logTechnical(`✅ Completado en ${totalTime}ms${usedKnowledge ? ' (con conocimiento)' : ''}`);
     
     return res.status(200).json({ ok: true, model: modelId, status, time: totalTime, usedKnowledge });
 
