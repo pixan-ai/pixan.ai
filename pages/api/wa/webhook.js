@@ -9,6 +9,7 @@ import { chat, supportsVision } from '../../../lib/wa/ai.js';
 import { getUserModel, setUserModel, clearMemory, addToMemory, buildMessages, getMemory } from '../../../lib/wa/memory.js';
 import { saveLog, logTechnical } from '../../../lib/wa/logger.js';
 import { needsKnowledgeBase, queryKnowledgeBase, listDocuments } from '../../../lib/wa/file-search.js';
+import { formatForWhatsApp } from '../../../lib/wa/format.js';
 
 // Parse incoming WhatsApp message
 const parseMessage = (body) => ({
@@ -210,6 +211,9 @@ export default async function handler(req, res) {
         response = await chat(messages, modelId);
         await logTechnical(`✅ Respuesta en ${Date.now() - aiStart}ms`);
       }
+      
+      // Format response for WhatsApp (convert **bold** to *bold*)
+      response = formatForWhatsApp(response);
       
     } catch (error) {
       console.error('❌ AI Error:', error.message);
