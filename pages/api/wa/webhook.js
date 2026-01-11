@@ -248,11 +248,11 @@ export default async function handler(req, res) {
       await logTechnical('💾 Guardado en memoria');
     }
     
-    // Log conversation
+    // Log conversation - NOW SAVING FULL RESPONSE
     await saveLog({
       userId: msg.userId,
       message: logMessage,
-      response: response.substring(0, 500),
+      response: response, // Full response, no truncation
       model: modelId,
       status,
       usedKnowledge
