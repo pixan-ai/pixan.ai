@@ -193,6 +193,7 @@ export default async function handler(req, res) {
       console.error('❌ AI Error:', error.message);
       await logTechnical(`❌ Error AI: ${error.message}`);
       
+      // Mapeo detallado de errores
       if (error.message.includes('RATE_LIMIT')) {
         status = 'rate_limit';
         response = '⏳ *Demasiadas peticiones*\n\nIntenta en 1 minuto o usa `/modelo opus` para premium.';
@@ -201,7 +202,19 @@ export default async function handler(req, res) {
         response = '❌ *Error de modelo*\n\nEl modelo Gemini ha sido actualizado. Por favor envía `/reset` y vuelve a intentar.';
       } else if (error.message.includes('SAFETY_FILTER')) {
         status = 'safety_filter';
-        response = '⚠️ *Contenido bloqueado*\n\nTu mensaje fue bloqueado por filtros de seguridad. Intenta reformularlo.';
+        // Extraer razón específica si existe
+        const reasonMatch = error.message.match(/\(([^)]+)\)/);
+        const reason = reasonMatch ? reasonMatch[1] : 'contenido sensible detectado';
+        response = `⚠️ *Contenido bloqueado*\n\nTu mensaje fue bloqueado por filtros de seguridad: ${reason}.\n\nIntenta reformular tu pregunta de otra manera.`;
+      } else if (error.message.includes('RESPUESTA_VACIA')) {
+        status = 'empty_response';
+        response = '🤔 *Sin respuesta*\n\nGemini no pudo generar una respuesta. Intenta reformular tu pregunta.';
+      } else if (error.message.includes('RECITATION')) {
+        status = 'recitation';
+        response = '📝 *Contenido protegido*\n\nNo puedo generar ese contenido por posibles derechos de autor.';
+      } else if (error.message.includes('RESPUESTA_INCOMPLETA')) {
+        status = 'incomplete';
+        response = '⚡ *Respuesta interrumpida*\n\nLa respuesta fue cortada. Intenta de nuevo.';
       } else if (error.message.includes('REQUEST_INVALIDO')) {
         status = 'invalid_request';
         response = '❌ *Petición inválida*\n\nHubo un problema con el formato del mensaje. Intenta de nuevo.';
