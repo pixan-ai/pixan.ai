@@ -86,11 +86,21 @@ export default function LLMColaborativa() {
   };
 
   // Función de autenticación
-  const handleAuth = () => {
-    if (password === 'Pixan01.') {
-      setAuthenticated(true);
-      fetchTokenStats();
-    } else {
+  const handleAuth = async () => {
+    try {
+      const response = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      if (response.ok) {
+        setAuthenticated(true);
+        fetchTokenStats();
+      } else {
+        setErrors({ auth: t('llmC.wrongPassword') });
+      }
+    } catch (error) {
       setErrors({ auth: t('llmC.wrongPassword') });
     }
   };

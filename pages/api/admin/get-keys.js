@@ -3,7 +3,11 @@ import path from 'path';
 import { decrypt, maskAPIKey } from '../../../lib/crypto-utils';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'pixan-admin-secret-2024';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET must be defined in environment variables');
+}
 const KEYS_FILE = path.join(process.cwd(), '.api-keys.json');
 
 // Middleware para verificar autenticación
