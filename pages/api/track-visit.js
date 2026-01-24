@@ -10,6 +10,10 @@ export default async function handler(req, res) {
   try {
     const { page, referrer, userAgent, timestamp } = req.body;
 
+    // Log para debug
+    console.log('📊 Track visit received:', { page, timestamp });
+    console.log('🔑 API Key exists:', !!process.env.RESEND_API_KEY);
+
     // Get visitor's IP (works with Vercel)
     const ip = req.headers['x-forwarded-for'] ||
                req.headers['x-real-ip'] ||
@@ -30,8 +34,9 @@ export default async function handler(req, res) {
     });
 
     // Send email notification
+    // Using Resend's test domain - change to 'notifications@pixan.ai' after domain verification
     const data = await resend.emails.send({
-      from: 'Pixan.ai Notifications <notifications@pixan.ai>',
+      from: 'Pixan.ai <onboarding@resend.dev>',
       to: ['aaaprosperi@gmail.com'],
       subject: `🔔 Nueva visita en pixan.ai: ${page}`,
       html: `
@@ -138,6 +143,8 @@ export default async function handler(req, res) {
       `,
     });
 
+    console.log('✅ Email sent successfully:', data.id);
+
     return res.status(200).json({
       success: true,
       messageId: data.id,
@@ -146,12 +153,18 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Error sending email notification:', error);
+    console.error('❌ Error sending email notification:', error);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    });
 
     // Don't block the user experience if email fails
     return res.status(200).json({
       success: false,
       error: error.message,
+      errorName: error.name,
       // Still return success to not affect user experience
       silentFail: true
     });

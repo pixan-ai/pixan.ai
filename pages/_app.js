@@ -38,20 +38,30 @@ export default function App({ Component, pageProps }) {
         timestamp: new Date().toISOString()
       }
 
-      // Send tracking data (don't await to not block rendering)
+      console.log('📊 [PROD] Tracking visit:', page)
+
+      // Send tracking data
       fetch('/api/track-visit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(visitData),
-      }).catch(err => {
-        // Silently fail - don't affect user experience
-        console.error('Failed to track visit:', err)
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('✅ Track response:', data)
+        if (data.success) {
+          console.log('📧 Email notification sent successfully')
+        } else {
+          console.warn('⚠️ Email notification failed:', data.error)
+        }
+      })
+      .catch(err => {
+        console.error('❌ Failed to track visit:', err)
       })
     } catch (error) {
-      // Silently fail - don't affect user experience
-      console.error('Error tracking visit:', error)
+      console.error('❌ Error tracking visit:', error)
     }
   }
 
