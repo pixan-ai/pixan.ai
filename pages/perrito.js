@@ -1115,16 +1115,16 @@ export default function Perrito() {
 
           <div style={{ background: 'rgba(255,255,255,0.1)', padding: '2rem', borderRadius: '12px', margin: '2rem 0' }}>
             <h3 style={{ color: 'white' }}>El Contexto</h3>
-            <p>Tu amiga tiene un perro de <strong>13 años</strong> al que le detectaron un soplo cardíaco durante una consulta por un problema en su patita, aparentemente <strong>sin realizar radiografía ni estudios específicos</strong>, solo por auscultación.</p>
+            <p style={{ color: 'white' }}>Tu amiga tiene un perro de <strong style={{ color: 'white' }}>13 años</strong> al que le detectaron un soplo cardíaco durante una consulta por un problema en su patita, aparentemente <strong style={{ color: 'white' }}>sin realizar radiografía ni estudios específicos</strong>, solo por auscultación.</p>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.1)', padding: '2rem', borderRadius: '12px', margin: '2rem 0' }}>
             <h3 style={{ color: 'white' }}>Lo Que Sabemos</h3>
             <ul style={{ color: 'white' }}>
-              <li>El pronóstico varía dramáticamente según la causa subyacente y el estadio</li>
-              <li>Puede ir desde esperanza de vida <strong>normal</strong> (soplos benignos) hasta <strong>6-14 meses</strong> (insuficiencia cardíaca congestiva)</li>
-              <li>La detección fue incidental - el perro fue por otro motivo</li>
-              <li>NO se hicieron estudios complementarios en ese momento</li>
+              <li style={{ color: 'white' }}>El pronóstico varía dramáticamente según la causa subyacente y el estadio</li>
+              <li style={{ color: 'white' }}>Puede ir desde esperanza de vida <strong style={{ color: 'white' }}>normal</strong> (soplos benignos) hasta <strong style={{ color: 'white' }}>6-14 meses</strong> (insuficiencia cardíaca congestiva)</li>
+              <li style={{ color: 'white' }}>La detección fue incidental - el perro fue por otro motivo</li>
+              <li style={{ color: 'white' }}>NO se hicieron estudios complementarios en ese momento</li>
             </ul>
           </div>
 
@@ -1137,10 +1137,10 @@ export default function Perrito() {
           <div style={{ background: 'rgba(255,255,255,0.1)', padding: '2rem', borderRadius: '12px', margin: '2rem 0' }}>
             <h3 style={{ color: 'white' }}>Por Qué es Urgente</h3>
             <ol style={{ color: 'white', fontSize: '1.1rem' }}>
-              <li><strong>Sin estudios = Sin diagnóstico real:</strong> La auscultación sola no es suficiente para saber qué tipo de problema cardíaco tiene</li>
-              <li><strong>El tiempo importa:</strong> Si requiere tratamiento, empezarlo temprano puede añadir meses o años de vida</li>
-              <li><strong>Puede ser algo menor:</strong> O puede requerir atención inmediata - no hay forma de saberlo sin estudios</li>
-              <li><strong>Tranquilidad:</strong> Conocer el diagnóstico exacto permite tomar decisiones informadas</li>
+              <li style={{ color: 'white' }}><strong style={{ color: 'white' }}>Sin estudios = Sin diagnóstico real:</strong> La auscultación sola no es suficiente para saber qué tipo de problema cardíaco tiene</li>
+              <li style={{ color: 'white' }}><strong style={{ color: 'white' }}>El tiempo importa:</strong> Si requiere tratamiento, empezarlo temprano puede añadir meses o años de vida</li>
+              <li style={{ color: 'white' }}><strong style={{ color: 'white' }}>Puede ser algo menor:</strong> O puede requerir atención inmediata - no hay forma de saberlo sin estudios</li>
+              <li style={{ color: 'white' }}><strong style={{ color: 'white' }}>Tranquilidad:</strong> Conocer el diagnóstico exacto permite tomar decisiones informadas</li>
             </ol>
           </div>
 
